@@ -9,6 +9,7 @@
     --border-color: #dddddd;
     --shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
     --border-radius: 8px;
+    --post-it-yellow: #fffeca;
 }
 
 * {
@@ -129,7 +130,7 @@ header p {
     gap: 0.75rem;
     padding: 0.8rem 1.8rem;
     border-radius: var(--border-radius);
-    border: none;
+    border: 1px solid transparent;
     font-size: 1rem;
     font-weight: 500;
     cursor: pointer;
@@ -137,8 +138,23 @@ header p {
     text-decoration: none;
     color: white;
 }
-.btn-primary { background-color: var(--santander-red); }
-.btn-primary:hover { background-color: var(--santander-red-dark); transform: translateY(-2px); }
+.btn-primary { background-color: var(--santander-red); border-color: var(--santander-red); }
+.btn-primary:hover { background-color: var(--santander-red-dark); border-color: var(--santander-red-dark); transform: translateY(-2px); }
+
+.btn-secondary {
+    background-color: var(--container-bg);
+    color: var(--dark-grey);
+    border-color: var(--border-color);
+}
+.btn-secondary:hover {
+    background-color: var(--light-grey);
+    border-color: #ccc;
+    transform: translateY(-2px);
+}
+.btn-secondary svg {
+    stroke: var(--dark-grey);
+}
+
 
 #mic-btn {
     width: 60px; height: 60px; border-radius: 50%;
@@ -196,6 +212,7 @@ input[type="file"] { width: 100%; }
     justify-content: space-between;
     align-items: center;
     pointer-events: none;
+    gap: 4px; /* Espacio entre miniaturas */
 }
 
 .progress-thumbnail {
@@ -221,6 +238,7 @@ input[type="file"] { width: 100%; }
     transform: translateX(-50%);
     transition: opacity 0.1s ease;
     border: 2px solid white;
+    z-index: 10;
 }
 
 #thumbnail-preview-img {
@@ -256,6 +274,11 @@ input[type="file"] { width: 100%; }
     background-color: var(--container-bg);
     border-bottom: 1px solid var(--border-color);
     flex-shrink: 0;
+}
+
+.recording-controls {
+    display: flex;
+    gap: 1rem;
 }
 
 #recording-title {
@@ -322,37 +345,84 @@ input[type="file"] { width: 100%; }
     line-height: 1.7;
     flex-grow: 1;
 }
-.transcript-display p {
+
+.transcript-entry {
+    position: relative;
     margin-bottom: 0.8rem;
     padding: 0.5rem;
     border-radius: 4px;
     transition: background-color 0.2s;
 }
-.transcript-display p:hover { background-color: var(--light-grey); }
-.transcript-display .speaker {
+
+.transcript-entry:hover {
+    background-color: var(--light-grey);
+}
+.transcript-entry .speaker {
     font-weight: 700;
     color: var(--santander-red);
 }
-.transcript-display p.current-phrase {
+.transcript-display .current-phrase {
     background-color: rgba(236, 0, 0, 0.1);
 }
-.transcript-display p[data-start-time] {
+.transcript-entry[data-start-time] {
     cursor: pointer;
 }
 
-/* Tooltip */
-#marker-tooltip {
-    position: fixed; /* Usar fixed para que funcione en la vista de grabación */
-    background-color: var(--dark-grey);
-    color: white;
-    padding: 5px 10px;
-    border-radius: 6px;
-    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
-    z-index: 1000;
-    display: none;
+.topic-marker {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--dark-grey);
+    margin: 1.5rem 0 1rem 0;
+    padding-bottom: 0.5rem;
+    border-bottom: 2px solid var(--santander-red);
 }
 
-#add-marker-btn {
-    background: none; border: none; color: white;
-    cursor: pointer; font-size: 0.9rem; font-weight: 500;
+.transcript-note {
+    background-color: var(--post-it-yellow);
+    border: 1px solid #f0e68c;
+    border-radius: 4px;
+    padding: 0.75rem;
+    margin-top: 0.5rem;
+    font-size: 0.9rem;
+    line-height: 1.5;
+    box-shadow: 2px 2px 5px rgba(0,0,0,0.05);
+}
+
+/* Controles de transcripción en vivo */
+.transcript-actions {
+    position: absolute;
+    top: 50%;
+    right: 10px;
+    transform: translateY(-50%);
+    display: none;
+    gap: 5px;
+    background-color: white;
+    padding: 4px;
+    border-radius: 6px;
+    box-shadow: var(--shadow);
+    z-index: 10;
+}
+.transcript-entry:hover .transcript-actions {
+    display: flex;
+}
+.action-btn {
+    background: none;
+    border: 1px solid var(--border-color);
+    border-radius: 50%;
+    width: 28px;
+    height: 28px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s;
+}
+.action-btn:hover { background-color: var(--light-grey); }
+.action-btn svg { width: 16px; height: 16px; stroke: var(--dark-grey); }
+
+/* Tooltip (ya no se usa, pero se mantiene por si acaso) */
+#marker-tooltip {
+    position: fixed;
+    z-index: 1000;
+    display: none;
 }

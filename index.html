@@ -52,15 +52,15 @@
                 </div>
                 
                 <div id="reuniones-tab" class="tab-content">
-                    <p class="tab-description">Carga el vídeo, el audio y el archivo de transcripción (.json) para revisar una reunión grabada.</p>
+                    <p class="tab-description">Carga el vídeo, el audio (.wav/.webm) y el archivo de transcripción (.json) para revisar una reunión grabada.</p>
                     <div class="upload-area">
                         <div class="file-input-wrapper">
                              <label for="video-upload">1. Cargar Vídeo (.webm)</label>
                              <input type="file" id="video-upload" accept=".webm">
                         </div>
                          <div class="file-input-wrapper">
-                             <label for="audio-upload">2. Cargar Audio (.webm)</label>
-                             <input type="file" id="audio-upload" accept=".webm,audio/*">
+                             <label for="audio-upload">2. Cargar Audio</label>
+                             <input type="file" id="audio-upload" accept=".webm,.wav,audio/*">
                         </div>
                         <div class="file-input-wrapper">
                             <label for="json-upload">3. Cargar Transcripción (.json)</label>
@@ -89,10 +89,16 @@
     <div id="recording-ui" style="display: none;">
         <header id="recording-header">
             <h1 id="recording-title">Grabando: Revisión Trimestral</h1>
-            <button id="stop-record-btn" class="btn btn-primary stop-btn">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12"></rect></svg>
-                <span>Detener Grabación</span>
-            </button>
+            <div class="recording-controls">
+                 <button id="screenshot-btn" class="btn btn-secondary">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path><rect x="2" y="2" width="20" height="20" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+                    <span>Capturar</span>
+                </button>
+                <button id="stop-record-btn" class="btn btn-primary stop-btn">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12"></rect></svg>
+                    <span>Detener Grabación</span>
+                </button>
+            </div>
         </header>
         <div id="recording-workspace">
             <div id="live-video-wrapper">
@@ -105,13 +111,13 @@
                 </div>
                 <div class="sidebar-section">
                     <h2>Notas</h2>
-                    <textarea id="live-notes" placeholder="Tus notas aquí..."></textarea>
+                    <textarea id="live-notes" placeholder="Tus notas y capturas aparecerán aquí..."></textarea>
                 </div>
             </aside>
         </div>
     </div>
 
-    <!-- Tooltip para marcadores -->
+    <!-- Tooltip para marcadores (obsoleto, se gestiona dinámicamente) -->
     <div id="marker-tooltip" style="display: none;">
         <button id="add-marker-btn">Añadir Marcador</button>
     </div>
