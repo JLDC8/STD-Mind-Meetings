@@ -1,6 +1,6 @@
 {
   "name": "Santander Mind Meetings",
-  "description": "Una aplicación para transcribir, grabar audio y grabar la pantalla de reuniones.",
+  "description": "Una aplicación para transcribir reuniones con identificación de hablantes, grabar pantalla y sincronizar la transcripción con el vídeo para su reproducción.",
   "requestFramePermissions": [
     "microphone",
     "display-capture"
