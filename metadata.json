@@ -1,6 +1,6 @@
 {
   "name": "Santander Mind Meetings",
-  "description": "A simple, local-first dictation app using the Web Speech API.",
+  "description": "Una aplicación para transcribir, grabar audio y grabar la pantalla de reuniones.",
   "requestFramePermissions": [
     "microphone",
     "display-capture"

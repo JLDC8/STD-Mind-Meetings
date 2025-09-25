@@ -129,34 +129,47 @@ header p {
     font-size: 1.1rem;
 }
 
-#record-btn {
+/* Generic Button Styles */
+.btn {
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
     padding: 0.75rem 1.5rem;
     border-radius: 8px;
     border: none;
-    background-color: var(--light-grey);
-    color: var(--text-color);
     font-size: 1rem;
     font-weight: 500;
     cursor: pointer;
     transition: background-color 0.3s ease;
-    margin-bottom: 1.5rem;
 }
 
-#record-btn:hover {
-    background-color: var(--medium-grey);
-}
-
-#record-btn .icon {
+.btn .icon {
     width: 20px;
     height: 20px;
 }
 
+.btn-secondary {
+    background-color: var(--light-grey);
+    color: var(--text-color);
+}
+
+.btn-secondary:hover {
+    background-color: var(--medium-grey);
+}
+
+#record-btn {
+    margin-bottom: 1.5rem;
+}
+
+#save-transcript-btn {
+    margin-top: 1rem;
+}
+
+
 /* Transcription Area */
 .transcription-area {
     margin-top: 1rem;
+    position: relative;
 }
 
 #transcript {
@@ -234,4 +247,72 @@ header p {
     color: #7f8c8d;
     font-size: 0.9rem;
     font-weight: 500;
+}
+
+/* Marker Tooltip */
+#marker-tooltip {
+    position: absolute;
+    background-color: var(--text-color);
+    color: white;
+    padding: 5px 10px;
+    border-radius: 6px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+    z-index: 100;
+    transform: translateX(-50%);
+}
+
+#add-marker-btn {
+    background: none;
+    border: none;
+    color: white;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 500;
+}
+
+/* Markers Area */
+#markers-container {
+    margin-top: 2rem;
+    text-align: left;
+    border-top: 1px solid var(--light-grey);
+    padding-top: 1.5rem;
+}
+
+#markers-container h2 {
+    font-size: 1.5rem;
+    margin-bottom: 1rem;
+}
+
+#markers-list {
+    list-style: none;
+    padding: 0;
+}
+
+#markers-list li {
+    background-color: var(--background-color);
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 0.75rem;
+    border-left: 4px solid var(--primary-color);
+}
+
+#markers-list .marker-time {
+    font-weight: bold;
+    color: var(--primary-color);
+    display: block;
+    margin-bottom: 0.5rem;
+    font-size: 0.9rem;
+}
+
+#markers-list .marker-text {
+    font-style: italic;
+    color: #555;
+    margin-bottom: 0.5rem;
+    padding-left: 1rem;
+    border-left: 2px solid var(--light-grey);
+    display: block;
+}
+
+#markers-list .marker-note {
+    margin-top: 0.5rem;
 }
