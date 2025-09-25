@@ -2,298 +2,495 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  */
-import { GoogleGenAI } from "@google/genai";
-
-// Estructura para la transcripción con metadatos
-interface TranscriptSegment {
-    speaker: string;
-    text: string;
-    startTime: number;
-    endTime: number;
-}
-interface Marker {
-    time: string;
-    text: string;
-    note: string;
-}
-
 
 const App = () => {
+    // --- ESTADO GLOBAL ---
+    let state = {
+        isRecording: false,
+        isListening: false,
+        activeTab: 'dictation-tab',
+        reunionTitle: '',
+        screenStream: null as MediaStream | null,
+        screenMediaRecorder: null as MediaRecorder | null,
+        recordedScreenChunks: [] as Blob[],
+        // Grabación de audio separada para pantalla
+        screenAudioRecorder: null as MediaRecorder | null,
+        recordedScreenAudioChunks: [] as Blob[],
+        // Grabación de audio para la pestaña de dictado
+        dictationAudioStream: null as MediaStream | null,
+        dictationAudioRecorder: null as MediaRecorder | null,
+        recordedDictationAudioChunks: [] as Blob[],
+        markers: [] as { time: number; text: string; note: string }[],
+        transcript: [] as { speaker: string, text: string, start: number, end: number }[],
+        recordingStartTime: 0,
+        lastFinalTranscriptTime: 0,
+        speakerCounter: 1,
+        manualStop: false, // Flag para controlar el reinicio del reconocimiento
+    };
+
     // --- ELEMENTOS DEL DOM ---
-    const transcriptEl = document.getElementById('transcript') as HTMLTextAreaElement;
-    const micBtn = document.getElementById('mic-btn') as HTMLButtonElement;
-    const statusEl = document.getElementById('status') as HTMLParagraphElement;
-    const tabBtns = document.querySelectorAll('.tab-btn');
-    const tabContents = document.querySelectorAll('.tab-content');
-    const recordBtn = document.getElementById('record-btn') as HTMLButtonElement;
-    const saveTranscriptBtn = document.getElementById('save-transcript-btn') as HTMLButtonElement;
-    const markerTooltip = document.getElementById('marker-tooltip') as HTMLDivElement;
-    const addMarkerBtn = document.getElementById('add-marker-btn') as HTMLButtonElement;
-    const markersList = document.getElementById('markers-list') as HTMLUListElement;
+    const DOM = {
+        mainUI: document.getElementById('main-ui')!,
+        recordingUI: document.getElementById('recording-ui')!,
+        appContainer: document.getElementById('app-container')!,
+        reunionTitleInput: document.getElementById('reunion-title') as HTMLInputElement,
+        micBtn: document.getElementById('mic-btn') as HTMLButtonElement,
+        statusEl: document.getElementById('status') as HTMLParagraphElement,
+        startRecordBtn: document.getElementById('start-record-btn') as HTMLButtonElement,
+        stopRecordBtn: document.getElementById('stop-record-btn') as HTMLButtonElement,
+        liveVideoPreview: document.getElementById('live-video-preview') as HTMLVideoElement,
+        recordingTitle: document.getElementById('recording-title')!,
+        liveTranscriptDisplay: document.getElementById('live-transcript-display')!,
+        liveNotes: document.getElementById('live-notes') as HTMLTextAreaElement,
+        transcriptTextarea: document.getElementById('transcript-textarea') as HTMLTextAreaElement,
+        markerTooltip: document.getElementById('marker-tooltip') as HTMLDivElement,
+        addMarkerBtn: document.getElementById('add-marker-btn') as HTMLButtonElement,
+        // Pestaña de revisión
+        videoUpload: document.getElementById('video-upload') as HTMLInputElement,
+        audioUpload: document.getElementById('audio-upload') as HTMLInputElement,
+        jsonUpload: document.getElementById('json-upload') as HTMLInputElement,
+        reviewPlayer: document.getElementById('review-player')!,
+        reviewVideo: document.getElementById('review-video') as HTMLVideoElement,
+        reviewVideoContainer: document.getElementById('review-video-container')!,
+        reviewTranscriptContainer: document.getElementById('review-transcript-container')!,
+        thumbnailContainer: document.getElementById('thumbnail-container')!,
+        thumbnailPreview: document.getElementById('thumbnail-preview') as HTMLDivElement,
+        thumbnailPreviewImg: document.getElementById('thumbnail-preview-img') as HTMLImageElement,
+        thumbnailPreviewTime: document.getElementById('thumbnail-preview-time') as HTMLSpanElement,
+    };
 
-    // Elementos de la grabación inmersiva
-    const inRecordingView = document.getElementById('in-recording-view') as HTMLDivElement;
-    const screenVideoPreviewEl = document.getElementById('screen-video-preview') as HTMLVideoElement;
-    const stopRecordBtn = document.getElementById('stop-record-btn') as HTMLButtonElement;
-    const liveTranscriptDisplayEl = document.getElementById('live-transcript-display') as HTMLDivElement;
-    const notesTextarea = document.getElementById('notes-textarea') as HTMLTextAreaElement;
-    
-    // Elementos de la pestaña de reproducción
-    const videoFileInput = document.getElementById('video-file-input') as HTMLInputElement;
-    const transcriptFileInput = document.getElementById('transcript-file-input') as HTMLInputElement;
-    const playbackArea = document.getElementById('playback-area') as HTMLDivElement;
-    const playbackVideoEl = document.getElementById('playback-video') as HTMLVideoElement;
-    const playbackTranscriptContainer = document.getElementById('playback-transcript-container') as HTMLDivElement;
+    // --- INICIALIZACIÓN ---
+    const init = () => {
+        setupTabs();
+        setupEventListeners();
+    };
 
-    // --- ESTADO DE LA APLICACIÓN ---
-    let ai: GoogleGenAI | null = null;
-    try {
-        ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
-    } catch (error) {
-        statusEl.textContent = 'Error al inicializar la API de IA. Verifica la clave de API.';
-        console.error(error);
+    const setupTabs = () => {
+        const tabBtns = document.querySelectorAll('.tab-btn');
+        tabBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const tabId = btn.getAttribute('data-tab')!;
+                state.activeTab = tabId;
+                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                btn.classList.add('active');
+                document.getElementById(tabId)!.classList.add('active');
+            });
+        });
+    };
+
+    // --- LÓGICA DE RECONOCIMIENTO DE VOZ (SPEECH-TO-TEXT) ---
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+        alert('Tu navegador no soporta la API de Reconocimiento de Voz. Funcionalidad limitada.');
+        // @ts-ignore
+        return;
     }
-    
-    let screenStream: MediaStream | null = null;
-    let screenMediaRecorder: MediaRecorder | null = null;
-    let recordedScreenChunks: Blob[] = [];
-    
-    let audioStream: MediaStream | null = null;
-    let audioRecorder: MediaRecorder | null = null;
-    let audioChunks: Blob[] = [];
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'es-ES';
+    recognition.interimResults = true;
+    recognition.continuous = true;
 
-    let markers: Marker[] = [];
-    let fullTranscript: TranscriptSegment[] = [];
-    let recordingStartTime: number | null = null;
-    let isListening = false;
-    let combinedStream: MediaStream | null = null;
-    let chunkCounter = 0;
-    
-    // --- LÓGICA DE PESTAÑAS ---
-    const switchTab = (tabId: string) => {
-        tabBtns.forEach(innerBtn => innerBtn.classList.remove('active'));
-        document.querySelector(`.tab-btn[data-tab="${tabId}"]`)?.classList.add('active');
-        
-        tabContents.forEach(content => {
-            content.classList.remove('active');
-            if (content.id === tabId) content.classList.add('active');
-        });
-    };
+    recognition.onresult = (event: any) => {
+        let interimTranscript = '';
+        let finalTranscript = '';
+        const now = Date.now();
 
-    tabBtns.forEach(btn => {
-        btn.addEventListener('click', () => {
-            const tabId = btn.getAttribute('data-tab');
-            if (tabId) switchTab(tabId);
-        });
-    });
-
-    // --- LÓGICA DE TRANSCRIPCIÓN CON IA (GEMINI) ---
-    const blobToBase64 = (blob: Blob): Promise<string> => {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onloadend = () => {
-                const base64 = (reader.result as string).split(',')[1];
-                resolve(base64);
-            };
-            reader.onerror = reject;
-            reader.readAsDataURL(blob);
-        });
-    };
-    
-    const transcribeAudioChunk = async (audioBlob: Blob) => {
-        if (!ai) return;
-        statusEl.textContent = `Transcribiendo audio (parte ${chunkCounter})...`;
-        try {
-            const base64Audio = await blobToBase64(audioBlob);
-            const response = await ai.models.generateContent({
-                model: 'gemini-2.5-flash',
-                contents: [
-                    {
-                        role: "user",
-                        parts: [
-                            { text: "Transcribe el siguiente audio. Identifica los diferentes hablantes como 'Hablante A', 'Hablante B', etc. Proporciona la salida como un array JSON de objetos, donde cada objeto tiene las claves 'speaker', 'text', 'startTime' y 'endTime'. Los tiempos deben ser en segundos y relativos al inicio de este fragmento de audio." },
-                            {
-                                inlineData: {
-                                    mimeType: 'audio/webm',
-                                    data: base64Audio
-                                }
-                            }
-                        ]
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+            if (event.results[i].isFinal) {
+                const transcriptText = event.results[i][0].transcript.trim();
+                if(transcriptText) {
+                    // Simulación de diarización: cambio de hablante tras 2s de silencio
+                    if (state.lastFinalTranscriptTime > 0 && (now - state.lastFinalTranscriptTime) > 2000) {
+                        state.speakerCounter++;
                     }
-                ],
-            });
-            const jsonText = response.text.replace(/```json|```/g, '').trim();
-            const segments: TranscriptSegment[] = JSON.parse(jsonText);
-            
-            const timeOffset = (chunkCounter - 1) * 10; // Asumiendo chunks de 10 segundos
-            segments.forEach(seg => {
-                const segmentWithOffset = {
-                    ...seg,
-                    startTime: seg.startTime + timeOffset,
-                    endTime: seg.endTime + timeOffset,
-                };
-                fullTranscript.push(segmentWithOffset);
-            });
+                    const speakerTag = `Hablante ${String.fromCharCode(64 + state.speakerCounter)}`;
+                    finalTranscript += `${speakerTag}: ${transcriptText}\n`;
 
-            renderTranscript();
-            statusEl.textContent = 'Escuchando...';
-        } catch (error) {
-            console.error("Error al transcribir con Gemini:", error);
-            statusEl.textContent = 'Error en la transcripción con IA.';
+                    const startTime = state.lastFinalTranscriptTime > 0 ? (state.lastFinalTranscriptTime - state.recordingStartTime) / 1000 : 0;
+                    state.transcript.push({
+                        speaker: speakerTag,
+                        text: transcriptText,
+                        start: startTime,
+                        end: (now - state.recordingStartTime) / 1000
+                    });
+                    state.lastFinalTranscriptTime = now;
+                }
+            } else {
+                interimTranscript += event.results[i][0].transcript;
+            }
+        }
+        
+        // Actualizar UI
+        if (state.isRecording) {
+            renderLiveTranscript(interimTranscript);
+        } else {
+            DOM.transcriptTextarea.value += finalTranscript;
+            DOM.transcriptTextarea.value = DOM.transcriptTextarea.value.replace(interimTranscript, '') + interimTranscript;
         }
     };
-    
-    const renderTranscript = () => {
-        // Para la vista principal (textarea)
-        transcriptEl.value = fullTranscript
-            .map(seg => `${seg.speaker}: ${seg.text}`)
-            .join('\n');
-        transcriptEl.scrollTop = transcriptEl.scrollHeight;
 
-        // Para la vista de grabación en vivo (div)
-        liveTranscriptDisplayEl.innerHTML = '';
-        fullTranscript.forEach(seg => {
-            const p = document.createElement('p');
-            p.innerHTML = `<strong>${seg.speaker}:</strong> ${seg.text}`;
-            liveTranscriptDisplayEl.appendChild(p);
-        });
-        liveTranscriptDisplayEl.scrollTop = liveTranscriptDisplayEl.scrollHeight;
+    recognition.onstart = () => {
+        state.isListening = true;
+        DOM.micBtn.classList.add('listening');
+        DOM.statusEl.textContent = 'Escuchando...';
     };
 
-    // --- LÓGICA DE GRABACIÓN DE AUDIO Y PANTALLA ---
-    const startRecording = async (recordScreen: boolean) => {
+    recognition.onend = () => {
+        state.isListening = false;
+        DOM.micBtn.classList.remove('listening');
+        DOM.statusEl.textContent = 'Haz clic para empezar';
+        // Solo reiniciar si no fue una detención manual
+        if (!state.manualStop && state.isRecording) {
+             console.log('Reiniciando reconocimiento durante grabación...');
+            try {
+                recognition.start();
+            } catch(e) {
+                console.error("Error al reiniciar el reconocimiento:", e);
+            }
+        }
+    };
+
+    recognition.onerror = (event: any) => {
+        if (event.error === 'no-speech' || event.error === 'aborted') {
+            return; // Ignorar estos "errores" comunes que no son críticos.
+        }
+        console.error('Error de reconocimiento:', event.error);
+    };
+
+    
+    // --- LÓGICA DE GRABACIÓN DE PANTALLA ---
+    
+    const startScreenRecording = async () => {
+        state.manualStop = false;
+        state.reunionTitle = DOM.reunionTitleInput.value.trim() || "Reunión Sin Título";
+        DOM.recordingTitle.textContent = `Grabando: ${state.reunionTitle}`;
+
         try {
-            let videoTrack: MediaStreamTrack | undefined;
-            let audioTrack: MediaStreamTrack | undefined;
+            const displayStream = await navigator.mediaDevices.getDisplayMedia({ video: { mediaSource: "screen" } as any, audio: true });
+            const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
-            // Reiniciar estado
-            fullTranscript = [];
-            markers = [];
-            chunkCounter = 0;
-            renderTranscript();
-            renderMarkers();
+            // Mezclar audios en un stream único de alta calidad
+            const audioContext = new AudioContext();
+            const destination = audioContext.createMediaStreamDestination();
             
-            if (recordScreen) {
-                document.body.classList.add('is-recording');
-                liveTranscriptDisplayEl.innerHTML = '';
-                notesTextarea.value = '';
-
-                screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
-                videoTrack = screenStream.getVideoTracks()[0];
-                audioTrack = screenStream.getAudioTracks()[0];
-                
-                if (!audioTrack) {
-                    audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                    audioTrack = audioStream.getAudioTracks()[0];
-                }
-                
-                screenVideoPreviewEl.srcObject = screenStream;
-            } else {
-                audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                audioTrack = audioStream.getAudioTracks()[0];
+            if (displayStream.getAudioTracks().length > 0) {
+                 audioContext.createMediaStreamSource(displayStream).connect(destination);
+            }
+            if (micStream.getAudioTracks().length > 0) {
+                audioContext.createMediaStreamSource(micStream).connect(destination);
             }
 
-            combinedStream = new MediaStream([videoTrack, audioTrack].filter(t => t));
+            const mixedAudioStream = destination.stream;
             
-            if(videoTrack) {
-                recordedScreenChunks = [];
-                screenMediaRecorder = new MediaRecorder(combinedStream, { mimeType: 'video/webm' });
-                screenMediaRecorder.ondataavailable = (event) => { if (event.data.size > 0) recordedScreenChunks.push(event.data); };
-                screenMediaRecorder.start();
-            }
+            // 1. Preparar grabador de VÍDEO (con audio mezclado)
+            const combinedStream = new MediaStream([displayStream.getVideoTracks()[0], ...mixedAudioStream.getAudioTracks()]);
+            DOM.liveVideoPreview.srcObject = combinedStream;
+            state.screenStream = displayStream; // Guardar para detener las pistas
+            
+            state.recordedScreenChunks = [];
+            state.screenMediaRecorder = new MediaRecorder(combinedStream, { mimeType: 'video/webm' });
+            state.screenMediaRecorder.ondataavailable = (event) => { if (event.data.size > 0) state.recordedScreenChunks.push(event.data); };
 
-            if(audioTrack) {
-                const audioOnlyStream = new MediaStream([audioTrack]);
-                audioChunks = [];
-                audioRecorder = new MediaRecorder(audioOnlyStream, { mimeType: 'audio/webm' });
-                
-                audioRecorder.ondataavailable = async (event) => {
-                    if (event.data.size > 0) {
-                        audioChunks.push(event.data);
-                        chunkCounter++;
-                        await transcribeAudioChunk(event.data);
-                    }
-                };
-                
-                audioRecorder.start(10000); // Enviar chunk cada 10 segundos
-            }
+            // 2. Preparar grabador de AUDIO SEPARADO
+            state.recordedScreenAudioChunks = [];
+            state.screenAudioRecorder = new MediaRecorder(mixedAudioStream, { mimeType: 'audio/webm' });
+            state.screenAudioRecorder.ondataavailable = (event) => { if (event.data.size > 0) state.recordedScreenAudioChunks.push(event.data); };
+
+            // Configurar el onstop principal
+            state.screenMediaRecorder.onstop = () => {
+                downloadAllFiles();
+                resetState();
+                DOM.mainUI.style.display = 'flex';
+                DOM.recordingUI.style.display = 'none';
+            };
             
-            isListening = true;
-            micBtn.classList.add('listening');
-            statusEl.textContent = 'Grabando y escuchando...';
-            recordingStartTime = Date.now();
+            // Iniciar todo
+            DOM.mainUI.style.display = 'none';
+            DOM.recordingUI.style.display = 'flex';
+            state.screenMediaRecorder.start();
+            state.screenAudioRecorder.start();
+            state.isRecording = true;
+            state.recordingStartTime = Date.now();
+            state.lastFinalTranscriptTime = state.recordingStartTime;
+            recognition.start();
 
         } catch (err) {
-            console.error("Error al iniciar la grabación:", err);
-            statusEl.textContent = 'No se pudo iniciar la grabación.';
-            stopRecording();
+            console.error("Error al iniciar grabación:", err);
+            alert("No se pudo iniciar la grabación de pantalla. Asegúrate de dar los permisos necesarios.");
+            resetState();
         }
     };
 
-    const stopRecording = () => {
-        isListening = false;
-        micBtn.classList.remove('listening');
-        statusEl.textContent = 'Procesamiento finalizado. Haz clic para empezar de nuevo.';
+    const stopScreenRecording = () => {
+        state.manualStop = true;
+        if (state.screenMediaRecorder?.state === 'recording') state.screenMediaRecorder.stop();
+        if (state.screenAudioRecorder?.state === 'recording') state.screenAudioRecorder.stop();
+        if (recognition && state.isListening) recognition.stop();
         
-        if (screenMediaRecorder?.state === 'recording') screenMediaRecorder.stop();
-        if (audioRecorder?.state === 'recording') audioRecorder.stop();
-        
-        screenStream?.getTracks().forEach(track => track.stop());
-        audioStream?.getTracks().forEach(track => track.stop());
-        combinedStream?.getTracks().forEach(track => track.stop());
-        
-        screenStream = null;
-        audioStream = null;
-        combinedStream = null;
-        recordingStartTime = null;
-        
-        document.body.classList.remove('is-recording');
-        screenVideoPreviewEl.srcObject = null;
-        
-        const timestamp = new Date().toISOString();
-
-        if (recordedScreenChunks.length > 0) {
-            const videoBlob = new Blob(recordedScreenChunks, { type: 'video/webm' });
-            downloadBlob(videoBlob, `grabacion_pantalla_${timestamp}.webm`);
-            
-            const transcriptBlob = downloadTranscription(timestamp);
-            
-            const notes = notesTextarea.value.trim();
-            if(notes.length > 0) {
-                const notesBlob = new Blob([notes], { type: 'text/plain;charset=utf-8' });
-                downloadBlob(notesBlob, `notas_${timestamp}.txt`);
-            }
-            
-            if(transcriptBlob) {
-                setTimeout(() => { // Pequeño delay para asegurar que las descargas inicien
-                    loadPlaybackFiles(videoBlob, transcriptBlob);
-                    switchTab('playback-tab');
-                }, 500);
-            }
-            recordedScreenChunks = [];
-
-        } else if (audioChunks.length > 0) {
-            const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-            downloadBlob(audioBlob, `grabacion_audio_${timestamp}.webm`);
-            downloadTranscription(timestamp);
-            audioChunks = [];
-        }
+        state.screenStream?.getTracks().forEach(track => track.stop());
     };
 
-    micBtn.addEventListener('click', () => {
-        if (isListening) {
-            stopRecording();
+    const renderLiveTranscript = (interimTranscript: string) => {
+        DOM.liveTranscriptDisplay.innerHTML = '';
+        state.transcript.forEach(entry => {
+            const p = document.createElement('p');
+            p.innerHTML = `<span class="speaker">${entry.speaker}:</span> ${entry.text}`;
+            DOM.liveTranscriptDisplay.appendChild(p);
+        });
+        if(interimTranscript) {
+             const p = document.createElement('p');
+             p.style.opacity = '0.6';
+             p.textContent = interimTranscript;
+             DOM.liveTranscriptDisplay.appendChild(p);
+        }
+        DOM.liveTranscriptDisplay.scrollTop = DOM.liveTranscriptDisplay.scrollHeight;
+    };
+
+
+    // --- LÓGICA DE GRABACIÓN DE AUDIO (SOLO) ---
+
+    const startAudioOnlyRecording = async () => {
+        try {
+            state.manualStop = false;
+            state.dictationAudioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            state.recordedDictationAudioChunks = [];
+            state.dictationAudioRecorder = new MediaRecorder(state.dictationAudioStream, { mimeType: 'audio/webm' });
+            state.dictationAudioRecorder.ondataavailable = (e) => { if (e.data.size > 0) state.recordedDictationAudioChunks.push(e.data); };
+            state.dictationAudioRecorder.onstop = () => {
+                const blob = new Blob(state.recordedDictationAudioChunks, { type: 'audio/webm' });
+                downloadFile(blob, `${generateFilename()}.webm`);
+                state.recordedDictationAudioChunks = [];
+            };
+            state.dictationAudioRecorder.start();
+            recognition.start();
+        } catch (err) { console.error('Error al iniciar grabación de audio:', err); }
+    };
+    
+    const stopAudioOnlyRecording = () => {
+        state.manualStop = true;
+        if (state.dictationAudioRecorder?.state === 'recording') state.dictationAudioRecorder.stop();
+        if (state.dictationAudioStream) state.dictationAudioStream.getTracks().forEach(track => track.stop());
+        if (recognition?.state === 'listening') recognition.stop();
+    };
+
+    // --- MANEJO DE MARCADORES ---
+
+    const handleSelection = (e: MouseEvent) => {
+        const selection = window.getSelection();
+        if (state.isRecording && selection && selection.toString().trim().length > 0) {
+            const range = selection.getRangeAt(0);
+            const rect = range.getBoundingClientRect();
+            DOM.markerTooltip.style.left = `${rect.left + (rect.width / 2)}px`;
+            DOM.markerTooltip.style.top = `${rect.top - 40}px`;
+            DOM.markerTooltip.style.transform = 'translateX(-50%)';
+            DOM.markerTooltip.style.display = 'block';
         } else {
-            startRecording(false);
+            DOM.markerTooltip.style.display = 'none';
         }
-    });
+    };
+    
+    const addMarker = () => {
+        const selectedText = window.getSelection()?.toString().trim();
+        if (!selectedText) return;
+        const note = prompt('Añade una nota para este marcador:', '');
+        if (note === null) return;
+        
+        const timestamp = (Date.now() - state.recordingStartTime);
+        state.markers.push({ time: timestamp / 1000, text: selectedText, note });
+        
+        DOM.markerTooltip.style.display = 'none';
+        window.getSelection()?.removeAllRanges();
+        console.log("Marcador añadido:", state.markers[state.markers.length - 1]);
+    };
 
-    recordBtn.addEventListener('click', () => startRecording(true));
-    stopRecordBtn.addEventListener('click', stopRecording);
+    // --- PESTAÑA DE REVISIÓN DE REUNIONES ---
+    const setupReviewTab = () => {
+        let videoFile: File | null = null;
+        let audioFile: File | null = null;
+        let jsonFile: File | null = null;
+        let reviewAudio: HTMLAudioElement | null = null;
 
+        const loadAndPlay = () => {
+            if (videoFile && audioFile && jsonFile) {
+                // Sincronizar audio y video
+                reviewAudio = new Audio(URL.createObjectURL(audioFile));
+                DOM.reviewVideo.src = URL.createObjectURL(videoFile);
+                DOM.reviewVideo.muted = true; // Silenciar el video para usar el audio externo
 
-    // --- LÓGICA DE GUARDADO Y DESCARGA ---
-    const downloadBlob = (blob: Blob, filename: string) => {
+                const syncPlay = () => reviewAudio?.play();
+                const syncPause = () => reviewAudio?.pause();
+                const syncSeek = () => {
+                    if (reviewAudio) reviewAudio.currentTime = DOM.reviewVideo.currentTime;
+                };
+
+                DOM.reviewVideo.removeEventListener('play', syncPlay);
+                DOM.reviewVideo.removeEventListener('pause', syncPause);
+                DOM.reviewVideo.removeEventListener('seeked', syncSeek);
+
+                DOM.reviewVideo.addEventListener('play', syncPlay);
+                DOM.reviewVideo.addEventListener('pause', syncPause);
+                DOM.reviewVideo.addEventListener('seeked', syncSeek);
+
+                DOM.reviewVideo.onloadedmetadata = () => {
+                     generateThumbnails(DOM.reviewVideo);
+                };
+
+                // Cargar transcripción
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        const data = JSON.parse(e.target!.result as string);
+                        renderReviewTranscript(data.transcript);
+                        setupReviewVideoSync(data.transcript);
+                        DOM.reviewPlayer.style.display = 'grid';
+                    } catch (err) {
+                        alert("Error al leer el archivo JSON.");
+                    }
+                };
+                reader.readAsText(jsonFile);
+            }
+        };
+
+        DOM.videoUpload.addEventListener('change', (e) => { videoFile = (e.target as HTMLInputElement).files?.[0] || null; loadAndPlay(); });
+        DOM.audioUpload.addEventListener('change', (e) => { audioFile = (e.target as HTMLInputElement).files?.[0] || null; loadAndPlay(); });
+        DOM.jsonUpload.addEventListener('change', (e) => { jsonFile = (e.target as HTMLInputElement).files?.[0] || null; loadAndPlay(); });
+    };
+    
+    const formatTime = (seconds: number) => {
+        const h = Math.floor(seconds / 3600).toString().padStart(2, '0');
+        const m = Math.floor((seconds % 3600) / 60).toString().padStart(2, '0');
+        const s = Math.floor(seconds % 60).toString().padStart(2, '0');
+        return h === '00' ? `${m}:${s}` : `${h}:${m}:${s}`;
+    };
+
+    const generateThumbnails = async (video: HTMLVideoElement) => {
+        DOM.thumbnailContainer.innerHTML = '<p style="color:white; font-size:12px; padding: 5px; width: 100%; text-align: center;">Generando previsualizaciones...</p>';
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        if (!context) {
+            console.error("No se pudo obtener el contexto del canvas.");
+            DOM.thumbnailContainer.innerHTML = '';
+            return;
+        }
+
+        const interval = 15; // Aumentar intervalo para no generar demasiadas imágenes
+        const duration = video.duration;
+        let generatedThumbnailsData = [];
+
+        // Guardar estado del vídeo
+        const initialTime = video.currentTime;
+        const wasMuted = video.muted;
+        video.muted = true;
+        
+        DOM.thumbnailContainer.innerHTML = ''; // Limpiar antes de poblar
+
+        for (let i = 0; i < duration; i += interval) {
+            const dataUrl = await new Promise<string>(resolve => {
+                const onSeeked = () => {
+                    video.removeEventListener('seeked', onSeeked); // Limpiar listener
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    context.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
+                    resolve(canvas.toDataURL('image/jpeg', 0.5));
+                };
+                video.addEventListener('seeked', onSeeked);
+                video.currentTime = i;
+            });
+            generatedThumbnailsData.push({ time: i, src: dataUrl });
+            
+            // Crear y mostrar la miniatura en la barra
+            const img = document.createElement('img');
+            img.src = dataUrl;
+            img.className = 'progress-thumbnail';
+            DOM.thumbnailContainer.appendChild(img);
+        }
+        
+        // Restaurar estado del vídeo
+        video.currentTime = initialTime;
+        video.muted = wasMuted;
+        
+        DOM.thumbnailContainer.dataset.thumbnails = JSON.stringify(generatedThumbnailsData);
+        console.log("Previsualizaciones generadas y mostradas.");
+    };
+    
+    const setupThumbnailHover = () => {
+        DOM.reviewVideoContainer.addEventListener('mousemove', (e) => {
+            const rect = DOM.reviewVideoContainer.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const progress = x / rect.width;
+            const hoverTime = progress * DOM.reviewVideo.duration;
+            
+            if (isNaN(hoverTime)) return;
+
+            const thumbnailsStr = DOM.thumbnailContainer.dataset.thumbnails;
+            if (!thumbnailsStr) return;
+            const thumbnails: { time: number; src: string }[] = JSON.parse(thumbnailsStr);
+
+            const closestThumbnail = thumbnails.reduce((prev, curr) => {
+                return (Math.abs(curr.time - hoverTime) < Math.abs(prev.time - hoverTime) ? curr : prev);
+            });
+
+            if (closestThumbnail) {
+                DOM.thumbnailPreview.style.display = 'flex';
+                DOM.thumbnailPreviewImg.src = closestThumbnail.src;
+                DOM.thumbnailPreviewTime.textContent = formatTime(hoverTime);
+                
+                const previewWidth = DOM.thumbnailPreview.offsetWidth;
+                const newLeft = Math.max(previewWidth / 2, Math.min(x, rect.width - previewWidth / 2));
+                DOM.thumbnailPreview.style.left = `${newLeft}px`;
+            }
+        });
+
+        DOM.reviewVideoContainer.addEventListener('mouseleave', () => {
+            DOM.thumbnailPreview.style.display = 'none';
+        });
+    };
+
+    const renderReviewTranscript = (transcript: { speaker: string, text: string, start: number }[]) => {
+        DOM.reviewTranscriptContainer.innerHTML = '';
+        transcript.forEach(entry => {
+            const p = document.createElement('p');
+            p.dataset.startTime = entry.start.toString();
+            p.innerHTML = `<span class="speaker">${entry.speaker}:</span> ${entry.text}`;
+            p.addEventListener('click', () => {
+                DOM.reviewVideo.currentTime = entry.start;
+            });
+            DOM.reviewTranscriptContainer.appendChild(p);
+        });
+    };
+
+    const setupReviewVideoSync = (transcript: { start: number }[]) => {
+        DOM.reviewVideo.addEventListener('timeupdate', () => {
+            const currentTime = DOM.reviewVideo.currentTime;
+            const phrases = DOM.reviewTranscriptContainer.querySelectorAll('p[data-start-time]');
+            let activePhrase: Element | null = null;
+            
+            phrases.forEach(p => {
+                const startTime = parseFloat(p.getAttribute('data-start-time')!);
+                if (currentTime >= startTime) {
+                    activePhrase = p;
+                }
+                p.classList.remove('current-phrase');
+            });
+
+            if (activePhrase) {
+                activePhrase.classList.add('current-phrase');
+                activePhrase.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        });
+    };
+
+    // --- UTILIDADES Y EVENTOS ---
+
+    const generateFilename = () => {
+        const title = (state.reunionTitle || "grabacion").replace(/\s+/g, '_');
+        const date = new Date();
+        const timestamp = `${date.getFullYear()}${(date.getMonth()+1).toString().padStart(2, '0')}${date.getDate().toString().padStart(2, '0')}_${date.getHours().toString().padStart(2, '0')}${date.getMinutes().toString().padStart(2, '0')}`;
+        return `${title}_${timestamp}`;
+    };
+
+    const downloadFile = (blob: Blob, filename: string) => {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.style.display = 'none';
@@ -303,152 +500,83 @@ const App = () => {
         a.click();
         URL.revokeObjectURL(url);
         document.body.removeChild(a);
-    }
-    
-    const downloadTranscription = (timestamp?: string): Blob | null => {
-        if (fullTranscript.length === 0 && markers.length === 0) {
-            if(!timestamp) alert('No hay transcripción para guardar.'); // Solo mostrar alerta en guardado manual
-            return null;
-        }
-        const dataToSave = {
-            transcript: fullTranscript,
-            markers: markers,
-        };
-        const transcriptString = JSON.stringify(dataToSave, null, 2);
-        const blob = new Blob([transcriptString], { type: 'application/json;charset=utf-8' });
-        const filename = `transcripcion_${timestamp || new Date().toISOString()}.json`;
-        downloadBlob(blob, filename);
-        return blob;
     };
-    saveTranscriptBtn.addEventListener('click', () => downloadTranscription());
 
-    // --- LÓGICA DE REPRODUCCIÓN SINCRONIZADA ---
-    let loadedTranscript: TranscriptSegment[] = [];
+    const downloadAllFiles = () => {
+        const baseFilename = generateFilename();
+        
+        // 1. Descargar Video
+        const videoBlob = new Blob(state.recordedScreenChunks, { type: 'video/webm' });
+        downloadFile(videoBlob, `${baseFilename}.webm`);
 
-    const loadPlaybackFiles = (videoFile: File | Blob, transcriptFile: File | Blob) => {
-        const videoUrl = URL.createObjectURL(videoFile);
-        playbackVideoEl.src = videoUrl;
+        // 2. Descargar Audio
+        const audioBlob = new Blob(state.recordedScreenAudioChunks, { type: 'audio/webm' });
+        downloadFile(audioBlob, `${baseFilename}_audio.webm`);
 
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            try {
-                const data = JSON.parse(e.target?.result as string);
-                loadedTranscript = data.transcript || []; // Manejar JSON antiguos o sin transcripción
-                markers = data.markers || []; // Cargar marcadores también
-                renderPlaybackTranscript();
-                renderMarkers(); // Mostrar marcadores cargados
-                playbackArea.style.display = 'grid';
-            } catch (err) {
-                alert('Error al leer el archivo de transcripción. Asegúrate de que es un JSON válido.');
+        // 3. Descargar JSON (Transcripción + Marcadores)
+        const jsonData = {
+            title: state.reunionTitle,
+            date: new Date().toISOString(),
+            transcript: state.transcript,
+            markers: state.markers,
+        };
+        const jsonBlob = new Blob([JSON.stringify(jsonData, null, 2)], { type: 'application/json' });
+        downloadFile(jsonBlob, `${baseFilename}.json`);
+
+        // 4. Descargar Notas
+        const notes = DOM.liveNotes.value;
+        if (notes.trim()) {
+            const notesBlob = new Blob([notes], { type: 'text/plain;charset=utf-8' });
+            downloadFile(notesBlob, `${baseFilename}_notas.txt`);
+        }
+    };
+    
+    const resetState = () => {
+        state.isRecording = false;
+        state.isListening = false;
+        state.screenStream = null;
+        state.screenMediaRecorder = null;
+        state.screenAudioRecorder = null;
+        state.recordedScreenChunks = [];
+        state.recordedScreenAudioChunks = [];
+        state.markers = [];
+        state.transcript = [];
+        state.recordingStartTime = 0;
+        state.lastFinalTranscriptTime = 0;
+        state.speakerCounter = 1;
+        state.manualStop = false;
+        DOM.liveTranscriptDisplay.innerHTML = '';
+        DOM.liveNotes.value = '';
+    };
+
+    const setupEventListeners = () => {
+        DOM.startRecordBtn.addEventListener('click', startScreenRecording);
+        DOM.stopRecordBtn.addEventListener('click', stopScreenRecording);
+
+        DOM.micBtn.addEventListener('click', () => {
+            if(state.isListening) {
+                stopAudioOnlyRecording();
+            } else {
+                DOM.transcriptTextarea.value = ''; // Limpiar para nueva transcripción de audio
+                startAudioOnlyRecording();
             }
-        };
-        reader.readAsText(transcriptFile);
-    };
-
-    const renderPlaybackTranscript = () => {
-        playbackTranscriptContainer.innerHTML = '';
-        loadedTranscript.forEach(seg => {
-            const p = document.createElement('p');
-            p.dataset.startTime = seg.startTime.toString();
-            p.innerHTML = `<strong>${seg.speaker}</strong>: ${seg.text}`;
-            p.addEventListener('click', () => {
-                playbackVideoEl.currentTime = seg.startTime;
-                playbackVideoEl.play();
-            });
-            playbackTranscriptContainer.appendChild(p);
         });
-    };
-
-    videoFileInput.addEventListener('change', () => {
-        if (videoFileInput.files?.[0] && transcriptFileInput.files?.[0]) {
-            loadPlaybackFiles(videoFileInput.files[0], transcriptFileInput.files[0]);
-        }
-    });
-    transcriptFileInput.addEventListener('change', () => {
-         if (videoFileInput.files?.[0] && transcriptFileInput.files?.[0]) {
-            loadPlaybackFiles(videoFileInput.files[0], transcriptFileInput.files[0]);
-        }
-    });
-
-    playbackVideoEl.addEventListener('timeupdate', () => {
-        const currentTime = playbackVideoEl.currentTime;
-        const allSegments = playbackTranscriptContainer.querySelectorAll('p');
         
-        allSegments.forEach(p => p.classList.remove('highlight'));
-
-        const currentSegment = loadedTranscript.find(seg => currentTime >= seg.startTime && currentTime <= seg.endTime);
-        if (currentSegment) {
-            const segmentEl = playbackTranscriptContainer.querySelector(`p[data-start-time="${currentSegment.startTime}"]`);
-            segmentEl?.classList.add('highlight');
-            segmentEl?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }
-    });
-
-    // --- LÓGICA DE MARCADORES ---
-     const formatTime = (ms: number) => {
-        const totalSeconds = Math.floor(ms / 1000);
-        const minutes = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
-        const seconds = (totalSeconds % 60).toString().padStart(2, '0');
-        return `${minutes}:${seconds}`;
-    };
-
-    const renderMarkers = () => {
-        markersList.innerHTML = '';
-        if (markers.length === 0) {
-            markersList.innerHTML = '<li>No hay marcadores todavía. Selecciona texto en la transcripción mientras grabas para añadir uno.</li>';
-            return;
-        }
-        markers.forEach(marker => {
-            const li = document.createElement('li');
-            li.innerHTML = `
-                <span class="marker-time">${marker.time}</span>
-                <blockquote class="marker-text">${marker.text}</blockquote>
-                <p class="marker-note">${marker.note}</p>
-            `;
-            markersList.appendChild(li);
+        DOM.liveTranscriptDisplay.addEventListener('mouseup', handleSelection);
+        DOM.addMarkerBtn.addEventListener('click', addMarker);
+        
+        document.addEventListener('mousedown', (e) => {
+            if (!DOM.markerTooltip.contains(e.target as Node)) {
+                DOM.markerTooltip.style.display = 'none';
+            }
         });
+
+        setupReviewTab();
+        setupThumbnailHover();
     };
-    
-    const handleSelection = (e: MouseEvent) => {
-        const selection = window.getSelection();
-        if (selection && selection.toString().trim().length > 0 && recordingStartTime) {
-            markerTooltip.style.left = `${e.clientX}px`;
-            markerTooltip.style.top = `${e.clientY - 45}px`;
-            markerTooltip.style.display = 'block';
-        } else {
-            markerTooltip.style.display = 'none';
-        }
-    };
-    
-    transcriptEl.addEventListener('mouseup', handleSelection);
-    liveTranscriptDisplayEl.addEventListener('mouseup', handleSelection);
-      
-    document.addEventListener('mousedown', (e) => {
-        if (!markerTooltip.contains(e.target as Node)) {
-            markerTooltip.style.display = 'none';
-        }
-    });
 
-    addMarkerBtn.addEventListener('click', () => {
-        const selectedText = window.getSelection()?.toString().trim();
-        if (!selectedText) return;
-        const note = prompt('Añade una nota para este marcador:', '');
-        if (note === null) return;
-
-        let timestamp = 'N/A';
-        if (recordingStartTime) {
-            const elapsedTime = Date.now() - recordingStartTime;
-            timestamp = formatTime(elapsedTime);
-        }
-        
-        markers.push({ time: timestamp, text: selectedText, note: note });
-        renderMarkers();
-        markerTooltip.style.display = 'none';
-        window.getSelection()?.removeAllRanges();
-    });
-
-    // --- INICIALIZACIÓN ---
-    renderMarkers();
+    // --- EJECUTAR ---
+    init();
 };
 
 App();

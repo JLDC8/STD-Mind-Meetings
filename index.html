@@ -7,117 +7,114 @@
     <link rel="stylesheet" href="index.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
-<script type="importmap">
-{
-  "imports": {
-    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.20.0"
-  }
-}
-</script>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
 </head>
 <body>
-    <div id="app-container">
-        <header>
-            <h1>Santander Mind Meetings</h1>
-            <p>Graba, transcribe y analiza tus reuniones con IA.</p>
-        </header>
-
-        <nav class="tabs">
-            <button class="tab-btn active" data-tab="dictation-tab">Transcripción</button>
-            <button class="tab-btn" data-tab="meeting-tab">Grabación de Pantalla</button>
-            <button class="tab-btn" data-tab="playback-tab">Reuniones</button>
-        </nav>
-
-        <main>
-            <div id="dictation-tab" class="tab-content active">
-                <p class="tab-description">Graba tu voz y obtén una transcripción en tiempo real con identificación de hablantes. El audio se guardará al detener.</p>
-            </div>
-
-            <div id="meeting-tab" class="tab-content">
-                 <p class="tab-description">Graba tu pantalla y audio. La transcripción se generará con IA y podrás revisarla de forma sincronizada al finalizar.</p>
-                <button id="record-btn" class="btn btn-primary">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="3"></circle></svg>
-                    <span>Iniciar Grabación de Pantalla</span>
-                </button>
-            </div>
+    <!-- Vista principal de la aplicación -->
+    <div id="main-ui">
+        <div id="app-container">
+            <header>
+                <h1>Santander Mind Meetings</h1>
+                <p>Graba, transcribe y analiza tus reuniones de forma inteligente.</p>
+            </header>
             
-            <div id="playback-tab" class="tab-content">
-                <p class="tab-description">Carga el vídeo y el archivo de transcripción (.json) de una reunión para reproducirla de forma sincronizada.</p>
-                <div id="playback-controls">
-                    <div class="file-input-wrapper">
-                        <label for="video-file-input">Cargar Vídeo (.webm)</label>
-                        <input type="file" id="video-file-input" accept="video/webm">
-                    </div>
-                    <div class="file-input-wrapper">
-                        <label for="transcript-file-input">Cargar Transcripción (.json)</label>
-                        <input type="file" id="transcript-file-input" accept=".json">
-                    </div>
-                </div>
-                <div id="playback-area" style="display: none;">
-                    <div id="playback-video-container">
-                        <video id="playback-video" controls></video>
-                    </div>
-                    <div id="playback-transcript-container">
-                        <!-- La transcripción sincronizada se mostrará aquí -->
-                    </div>
-                </div>
+            <div class="reunion-title-container">
+                <label for="reunion-title">Título de la Reunión</label>
+                <input type="text" id="reunion-title" placeholder="Ej: Revisión Trimestral Q3">
             </div>
 
-            <div class="transcription-area">
-                <textarea id="transcript" placeholder="La transcripción aparecerá aquí..." readonly></textarea>
-                <div id="marker-tooltip" style="display: none;">
-                    <button id="add-marker-btn">Añadir Marcador</button>
-                </div>
-                <div class="controls">
-                    <button id="mic-btn" aria-label="Iniciar dictado">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mic-icon">
-                            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
-                            <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-                            <line x1="12" y1="19" x2="12" y2="23"></line>
-                            <line x1="8" y1="23" x2="16" y2="23"></line>
-                        </svg>
-                    </button>
-                </div>
-                <p id="status" role="status">Haz clic en el micrófono para empezar</p>
-                <button id="save-transcript-btn" class="btn btn-secondary">Guardar Transcripción (.json)</button>
-            </div>
+            <nav class="tabs">
+                <button class="tab-btn active" data-tab="dictation-tab">Transcripción de Audio</button>
+                <button class="tab-btn" data-tab="meeting-tab">Grabación de Pantalla</button>
+                <button class="tab-btn" data-tab="reuniones-tab">Ver Reuniones</button>
+            </nav>
 
-            <div id="markers-container">
-                <h2>Marcadores</h2>
-                <ul id="markers-list">
-                    <!-- Los marcadores se añadirán aquí dinámicamente -->
-                </ul>
-            </div>
-        </main>
+            <main>
+                <div id="dictation-tab" class="tab-content active">
+                    <p class="tab-description">Graba solo tu voz y obtén una transcripción en tiempo real. El audio se guardará al detener.</p>
+                     <div class="controls">
+                        <button id="mic-btn" aria-label="Iniciar dictado">
+                            <svg class="mic-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="white" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
+                        </button>
+                    </div>
+                    <p id="status" role="status">Haz clic en el micrófono para empezar</p>
+                    <textarea id="transcript-textarea" placeholder="La transcripción aparecerá aquí..."></textarea>
+                </div>
+
+                <div id="meeting-tab" class="tab-content">
+                    <p class="tab-description">Inicia una grabación de pantalla con transcripción y notas en vivo. La interfaz ocupará toda la pantalla.</p>
+                    <div class="controls">
+                        <button id="start-record-btn" class="btn btn-primary">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-2-9h4v2h-4v-2z"/></svg>
+                            <span>Iniciar Grabación</span>
+                        </button>
+                    </div>
+                </div>
+                
+                <div id="reuniones-tab" class="tab-content">
+                    <p class="tab-description">Carga el vídeo, el audio y el archivo de transcripción (.json) para revisar una reunión grabada.</p>
+                    <div class="upload-area">
+                        <div class="file-input-wrapper">
+                             <label for="video-upload">1. Cargar Vídeo (.webm)</label>
+                             <input type="file" id="video-upload" accept=".webm">
+                        </div>
+                         <div class="file-input-wrapper">
+                             <label for="audio-upload">2. Cargar Audio (.webm)</label>
+                             <input type="file" id="audio-upload" accept=".webm,audio/*">
+                        </div>
+                        <div class="file-input-wrapper">
+                            <label for="json-upload">3. Cargar Transcripción (.json)</label>
+                            <input type="file" id="json-upload" accept=".json">
+                        </div>
+                    </div>
+                    <div id="review-player" style="display: none;">
+                        <div id="review-video-container" class="review-video-container">
+                             <video id="review-video" controls muted></video>
+                             <div id="thumbnail-container"></div>
+                             <div id="thumbnail-preview" style="display: none;">
+                                <img id="thumbnail-preview-img" src="" alt="Video thumbnail preview">
+                                <span id="thumbnail-preview-time">00:00</span>
+                             </div>
+                        </div>
+                        <div id="review-transcript-container" class="transcript-display">
+                            <p class="placeholder">La transcripción aparecerá aquí.</p>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
     </div>
-
-    <!-- Vista de grabación inmersiva -->
-    <div id="in-recording-view" style="display: none;">
-        <header class="recording-header">
-            <h2>Grabando Reunión...</h2>
-            <button id="stop-record-btn" class="btn btn-danger">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect></svg>
+    
+    <!-- Vista de Grabación Inmersiva -->
+    <div id="recording-ui" style="display: none;">
+        <header id="recording-header">
+            <h1 id="recording-title">Grabando: Revisión Trimestral</h1>
+            <button id="stop-record-btn" class="btn btn-primary stop-btn">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12"></rect></svg>
                 <span>Detener Grabación</span>
             </button>
         </header>
-        <div class="recording-layout">
-            <div class="video-column">
-                <video id="screen-video-preview" autoplay muted playsinline></video>
+        <div id="recording-workspace">
+            <div id="live-video-wrapper">
+                <video id="live-video-preview" autoplay muted playsinline></video>
             </div>
-            <div class="sidebar-column">
-                <div class="live-transcript-container">
-                    <h3>Transcripción en Vivo</h3>
-                    <div id="live-transcript-display"></div>
+            <aside id="recording-sidebar">
+                <div class="sidebar-section">
+                    <h2>Transcripción en Vivo</h2>
+                    <div id="live-transcript-display" class="transcript-display"></div>
                 </div>
-                <div class="notes-container">
-                    <h3>Notas</h3>
-                    <textarea id="notes-textarea" placeholder="Toma notas rápidas aquí..."></textarea>
+                <div class="sidebar-section">
+                    <h2>Notas</h2>
+                    <textarea id="live-notes" placeholder="Tus notas aquí..."></textarea>
                 </div>
-            </div>
+            </aside>
         </div>
     </div>
 
+    <!-- Tooltip para marcadores -->
+    <div id="marker-tooltip" style="display: none;">
+        <button id="add-marker-btn">Añadir Marcador</button>
+    </div>
 
     <script type="module" src="index.tsx"></script>
 </body>
