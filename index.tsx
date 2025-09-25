@@ -19,6 +19,8 @@ const App = () => {
   const videoPlaceholder = document.getElementById('video-placeholder') as HTMLDivElement;
 
   let screenStream: MediaStream | null = null;
+  let mediaRecorder: MediaRecorder | null = null;
+  let recordedChunks: Blob[] = [];
 
   // --- Lógica de Pestañas ---
   tabBtns.forEach(btn => {
@@ -39,6 +41,26 @@ const App = () => {
 
 
   // --- Lógica de Grabación de Pantalla ---
+  const downloadRecording = () => {
+    if (recordedChunks.length === 0) return;
+
+    const blob = new Blob(recordedChunks, { type: 'video/webm' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    document.body.appendChild(a);
+    a.style.display = 'none';
+    a.href = url;
+    
+    const now = new Date();
+    const timestamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}-${String(now.getMinutes()).padStart(2, '0')}`;
+    a.download = `grabacion_${timestamp}.webm`;
+    
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+    recordedChunks = [];
+  };
+
   const startRecording = async () => {
     try {
       screenStream = await navigator.mediaDevices.getDisplayMedia({
@@ -57,6 +79,19 @@ const App = () => {
       // Escuchar si el usuario detiene la grabación desde el control del navegador
       screenStream.getVideoTracks()[0].addEventListener('ended', stopRecording);
 
+      // Iniciar MediaRecorder
+      recordedChunks = [];
+      mediaRecorder = new MediaRecorder(screenStream, { mimeType: 'video/webm' });
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          recordedChunks.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = downloadRecording;
+      mediaRecorder.start();
+
     } catch (err) {
       console.error("Error al iniciar la grabación de pantalla:", err);
       statusEl.textContent = 'No se pudo iniciar la grabación de pantalla.';
@@ -64,6 +99,9 @@ const App = () => {
   };
 
   const stopRecording = () => {
+    if (mediaRecorder && mediaRecorder.state === 'recording') {
+      mediaRecorder.stop();
+    }
     if (screenStream) {
       screenStream.getTracks().forEach(track => track.stop());
       screenStream = null;
