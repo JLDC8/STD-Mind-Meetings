@@ -57,6 +57,7 @@ const App = () => {
         statusEl: document.getElementById('status') as HTMLParagraphElement,
         startRecordBtn: document.getElementById('start-record-btn') as HTMLButtonElement,
         videoFormatSelect: document.getElementById('video-format') as HTMLSelectElement,
+        audioSourceSelect: document.getElementById('audio-source') as HTMLSelectElement,
         stopRecordBtn: document.getElementById('stop-record-btn') as HTMLButtonElement,
         screenshotBtn: document.getElementById('screenshot-btn') as HTMLButtonElement,
         liveVideoPreview: document.getElementById('live-video-preview') as HTMLVideoElement,
@@ -124,49 +125,61 @@ const App = () => {
 
     recognition.onresult = (event: any) => {
         let interimTranscript = '';
-        let finalTranscript = '';
+        let finalTranscriptForDictation = '';
         const now = Date.now();
 
         for (let i = event.resultIndex; i < event.results.length; ++i) {
+            const transcriptPart = event.results[i][0].transcript;
+            
             if (event.results[i].isFinal) {
-                const transcriptText = event.results[i][0].transcript.trim();
-                if(transcriptText) {
-                    let lastTranscriptEndTime = 0;
-                    for (let j = state.transcript.length - 1; j >= 0; j--) {
-                        const item = state.transcript[j];
-                        if (item.type === 'transcript') {
-                            lastTranscriptEndTime = item.end;
-                            break;
-                        }
-                    }
-                    const startTime = state.lastFinalTranscriptTime > 0 ? (state.lastFinalTranscriptTime - state.recordingStartTime) / 1000 : lastTranscriptEndTime;
-                    const speakerTag = formatTime(startTime);
-                    
-                    finalTranscript += `[${speakerTag}] ${transcriptText}\n`;
+                const transcriptText = transcriptPart.trim();
+                if (!transcriptText) continue;
 
+                let lastTranscriptEndTime = 0;
+                for (let j = state.transcript.length - 1; j >= 0; j--) {
+                    const item = state.transcript[j];
+                    if (item.type === 'transcript') {
+                        lastTranscriptEndTime = item.end;
+                        break;
+                    }
+                }
+
+                const startTime = state.lastFinalTranscriptTime > 0 ? (state.lastFinalTranscriptTime - state.recordingStartTime) / 1000 : lastTranscriptEndTime;
+                const speakerTag = formatTime(startTime);
+                const endTime = (now - state.recordingStartTime) / 1000;
+
+                finalTranscriptForDictation += `[${speakerTag}] ${transcriptText}\n`;
+
+                const timeSinceLastFinal = now - state.lastFinalTranscriptTime;
+                const lastEntry = state.transcript.length > 0 ? state.transcript[state.transcript.length - 1] : null;
+
+                if (state.isRecording && lastEntry && lastEntry.type === 'transcript' && timeSinceLastFinal < 1200) {
+                    lastEntry.text += ' ' + transcriptText;
+                    lastEntry.end = endTime;
+                } else {
                     const newFinalEntry: TranscriptEntry = {
                         type: 'transcript',
                         speaker: speakerTag,
                         text: transcriptText,
                         start: startTime,
-                        end: (now - state.recordingStartTime) / 1000
+                        end: endTime,
                     };
                     state.transcript.push(newFinalEntry);
-                    state.lastFinalTranscriptTime = now;
                 }
+                state.lastFinalTranscriptTime = now;
             } else {
-                interimTranscript += event.results[i][0].transcript;
+                interimTranscript += transcriptPart;
             }
         }
         
         if (state.isInlineEditing) {
-            return; // No renderizar si se está editando una nota o tema
+            return;
         }
 
         if (state.isRecording) {
             renderLiveTranscript(interimTranscript);
         } else {
-            DOM.transcriptTextarea.value += finalTranscript;
+            DOM.transcriptTextarea.value += finalTranscriptForDictation;
         }
     };
     
@@ -199,19 +212,33 @@ const App = () => {
             state.videoMimeType = selectedMimeType;
         }
         state.videoExtension = state.videoMimeType.includes('mp4') ? 'mp4' : 'webm';
+        
+        const audioSource = DOM.audioSourceSelect.value;
 
 
         try {
-            const displayStream = await navigator.mediaDevices.getDisplayMedia({ video: { mediaSource: "screen" } as any, audio: true });
-            const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const displayStream = await navigator.mediaDevices.getDisplayMedia({ 
+                video: { mediaSource: "screen" } as any, 
+                audio: audioSource === 'system' || audioSource === 'both',
+            });
+            
+            let micStream: MediaStream | null = null;
+            if(audioSource === 'mic' || audioSource === 'both') {
+                micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            }
 
             const audioContext = new AudioContext();
             state.audioContext = audioContext;
             state.sampleRate = audioContext.sampleRate;
             state.pcmData = [];
             const destination = audioContext.createMediaStreamDestination();
-            if (displayStream.getAudioTracks().length > 0) audioContext.createMediaStreamSource(displayStream).connect(destination);
-            if (micStream.getAudioTracks().length > 0) audioContext.createMediaStreamSource(micStream).connect(destination);
+
+            if ((audioSource === 'system' || audioSource === 'both') && displayStream.getAudioTracks().length > 0) {
+                 audioContext.createMediaStreamSource(displayStream).connect(destination);
+            }
+            if ((audioSource === 'mic' || audioSource === 'both') && micStream?.getAudioTracks().length > 0) {
+                 audioContext.createMediaStreamSource(micStream).connect(destination);
+            }
             const mixedAudioStream = destination.stream;
 
             const source = audioContext.createMediaStreamSource(mixedAudioStream);
@@ -244,7 +271,9 @@ const App = () => {
             state.isRecording = true;
             state.recordingStartTime = Date.now();
             state.lastFinalTranscriptTime = state.recordingStartTime;
-            recognition.start();
+            if (micStream || (audioSource === 'system' && displayStream.getAudioTracks().length > 0)) {
+                recognition.start();
+            }
 
         } catch (err) {
             console.error("Error al iniciar grabación:", err);

@@ -44,11 +44,21 @@
                 <div id="meeting-tab" class="tab-content">
                     <p class="tab-description">Inicia una grabación de pantalla con transcripción y notas en vivo. La interfaz ocupará toda la pantalla.</p>
                     <div class="format-selector-container">
-                        <label for="video-format">Formato de Vídeo</label>
-                        <select id="video-format">
-                            <option value="video/webm">WebM (Recomendado)</option>
-                            <option value="video/mp4">MP4 (Experimental)</option>
-                        </select>
+                        <div>
+                            <label for="video-format">Formato de Vídeo</label>
+                            <select id="video-format">
+                                <option value="video/webm">WebM (Recomendado)</option>
+                                <option value="video/mp4">MP4 (Experimental)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="audio-source">Fuente de Audio</label>
+                            <select id="audio-source">
+                                <option value="both">Micrófono y Audio del Sistema</option>
+                                <option value="system">Solo Audio del Sistema</option>
+                                <option value="mic">Solo Micrófono</option>
+                            </select>
+                        </div>
                     </div>
                     <div class="controls">
                         <button id="start-record-btn" class="btn btn-primary">

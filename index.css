@@ -205,6 +205,10 @@ textarea:focus {
 .format-selector-container {
     margin-bottom: 1.5rem;
     text-align: center;
+    display: flex;
+    justify-content: center;
+    gap: 2rem;
+    flex-wrap: wrap;
 }
 
 .format-selector-container label {
@@ -213,7 +217,7 @@ textarea:focus {
     margin-bottom: 0.5rem;
 }
 
-#video-format {
+#video-format, #audio-source {
     padding: 0.5rem;
     border-radius: var(--border-radius);
     border: 1px solid var(--border-color);
