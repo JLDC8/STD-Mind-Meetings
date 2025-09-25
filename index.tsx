@@ -42,7 +42,6 @@ const App = () => {
         screenshotCounter: 0,
         recordingStartTime: 0,
         lastFinalTranscriptTime: 0,
-        speakerCounter: 1,
         manualStop: false,
         videoMimeType: 'video/webm' as string,
         videoExtension: 'webm' as string,
@@ -66,7 +65,13 @@ const App = () => {
         liveNotes: document.getElementById('live-notes') as HTMLTextAreaElement,
         transcriptTextarea: document.getElementById('transcript-textarea') as HTMLTextAreaElement,
         // Pestaña de revisión
-        reunionUploadInput: document.getElementById('reunion-upload-input') as HTMLInputElement,
+        reviewVideoInput: document.getElementById('review-video-input') as HTMLInputElement,
+        reviewAudioInput: document.getElementById('review-audio-input') as HTMLInputElement,
+        reviewJsonInput: document.getElementById('review-json-input') as HTMLInputElement,
+        videoFileNameDisplay: document.getElementById('video-file-name')!,
+        audioFileNameDisplay: document.getElementById('audio-file-name')!,
+        jsonFileNameDisplay: document.getElementById('json-file-name')!,
+        startReviewBtn: document.getElementById('start-review-btn') as HTMLButtonElement,
         reviewTitle: document.getElementById('review-title')!,
         closeReviewBtn: document.getElementById('close-review-btn')!,
         reviewVideo: document.getElementById('review-video') as HTMLVideoElement,
@@ -98,6 +103,13 @@ const App = () => {
             });
         });
     };
+    
+    const formatTime = (seconds: number) => {
+        const h = Math.floor(seconds / 3600);
+        const m = Math.floor((seconds % 3600) / 60).toString().padStart(2, '0');
+        const s = Math.floor(seconds % 60).toString().padStart(2, '0');
+        return h > 0 ? `${h.toString().padStart(2,'0')}:${m}:${s}` : `${m}:${s}`;
+    };
 
     // --- LÓGICA DE RECONOCIMIENTO DE VOZ ---
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -114,18 +126,11 @@ const App = () => {
         let interimTranscript = '';
         let finalTranscript = '';
         const now = Date.now();
-        let newFinalEntry: TranscriptEntry | null = null;
 
         for (let i = event.resultIndex; i < event.results.length; ++i) {
             if (event.results[i].isFinal) {
                 const transcriptText = event.results[i][0].transcript.trim();
                 if(transcriptText) {
-                    if (state.lastFinalTranscriptTime > 0 && (now - state.lastFinalTranscriptTime) > 2000) {
-                        state.speakerCounter++;
-                    }
-                    const speakerTag = `Hablante ${String.fromCharCode(64 + state.speakerCounter)}`;
-                    finalTranscript += `${speakerTag}: ${transcriptText}\n`;
-
                     let lastTranscriptEndTime = 0;
                     for (let j = state.transcript.length - 1; j >= 0; j--) {
                         const item = state.transcript[j];
@@ -135,7 +140,11 @@ const App = () => {
                         }
                     }
                     const startTime = state.lastFinalTranscriptTime > 0 ? (state.lastFinalTranscriptTime - state.recordingStartTime) / 1000 : lastTranscriptEndTime;
-                    newFinalEntry = {
+                    const speakerTag = formatTime(startTime);
+                    
+                    finalTranscript += `[${speakerTag}] ${transcriptText}\n`;
+
+                    const newFinalEntry: TranscriptEntry = {
                         type: 'transcript',
                         speaker: speakerTag,
                         text: transcriptText,
@@ -150,6 +159,10 @@ const App = () => {
             }
         }
         
+        if (state.isInlineEditing) {
+            return; // No renderizar si se está editando una nota o tema
+        }
+
         if (state.isRecording) {
             renderLiveTranscript(interimTranscript);
         } else {
@@ -256,7 +269,7 @@ const App = () => {
                 entryEl = document.createElement('div');
                 entryEl.className = 'transcript-entry';
                 entryEl.dataset.index = index.toString();
-                entryEl.innerHTML = `<p><span class="speaker">${entry.speaker}:</span> ${entry.text}</p>`;
+                entryEl.innerHTML = `<p><span class="speaker">[${entry.speaker}]</span> ${entry.text}</p>`;
                 if (entry.note) {
                     const noteEl = document.createElement('div');
                     noteEl.className = 'transcript-note';
@@ -351,38 +364,44 @@ const App = () => {
 
     // --- PESTAÑA DE REVISIÓN DE REUNIONES ---
     const setupReviewTab = () => {
-        DOM.reunionUploadInput.addEventListener('change', (e) => {
-            const files = (e.target as HTMLInputElement).files;
-            if (!files || files.length === 0) return;
+        let videoFile: File | null = null;
+        let audioFile: File | null = null;
+        let jsonFile: File | null = null;
 
-            let videoFile: File | null = null;
-            let audioFile: File | null = null;
-            let jsonFile: File | null = null;
+        const checkFiles = () => {
+            DOM.startReviewBtn.disabled = !(videoFile && audioFile && jsonFile);
+        };
 
-            Array.from(files).forEach(file => {
-                if (file.type.startsWith('video/')) videoFile = file;
-                else if (file.type.startsWith('audio/')) audioFile = file;
-                else if (file.name.endsWith('.json')) jsonFile = file;
-            });
-
-            if (!videoFile) {
-                alert("No se ha seleccionado un archivo de vídeo (.mp4 o .webm).");
-                return;
+        DOM.reviewVideoInput.addEventListener('change', (e) => {
+            const file = (e.target as HTMLInputElement).files?.[0];
+            if (file) {
+                videoFile = file;
+                DOM.videoFileNameDisplay.textContent = file.name;
+                checkFiles();
             }
+        });
 
-            // Si faltan audio o json, intentamos encontrarlos por el nombre
-            const baseName = videoFile.name.substring(0, videoFile.name.lastIndexOf('.'));
-            if (!audioFile) {
-                audioFile = Array.from(files).find(f => f.name.startsWith(baseName) && f.name.endsWith('.wav')) || null;
+        DOM.reviewAudioInput.addEventListener('change', (e) => {
+            const file = (e.target as HTMLInputElement).files?.[0];
+            if (file) {
+                audioFile = file;
+                DOM.audioFileNameDisplay.textContent = file.name;
+                checkFiles();
             }
-            if (!jsonFile) {
-                jsonFile = Array.from(files).find(f => f.name.startsWith(baseName) && f.name.endsWith('.json')) || null;
+        });
+
+        DOM.reviewJsonInput.addEventListener('change', (e) => {
+            const file = (e.target as HTMLInputElement).files?.[0];
+            if (file) {
+                jsonFile = file;
+                DOM.jsonFileNameDisplay.textContent = file.name;
+                checkFiles();
             }
-            
+        });
+
+        DOM.startReviewBtn.addEventListener('click', () => {
             if (videoFile && audioFile && jsonFile) {
                 processAndPlayReviewFiles(videoFile, audioFile, jsonFile);
-            } else {
-                alert(`No se pudieron encontrar todos los archivos necesarios. Asegúrate de que los archivos de vídeo, audio (.wav) y JSON (.json) comparten el mismo nombre base (Ej: 'MiReunion.mp4', 'MiReunion_audio.wav', 'MiReunion.json') y selecciónalos juntos.`);
             }
         });
     };
@@ -434,13 +453,6 @@ const App = () => {
             DOM.reviewUI.style.display = 'none';
             DOM.mainUI.style.display = 'flex';
         };
-    };
-
-    const formatTime = (seconds: number) => {
-        const h = Math.floor(seconds / 3600).toString().padStart(2, '0');
-        const m = Math.floor((seconds % 3600) / 60).toString().padStart(2, '0');
-        const s = Math.floor(seconds % 60).toString().padStart(2, '0');
-        return h === '00' ? `${m}:${s}` : `${h}:${m}:${s}`;
     };
 
     const generateThumbnails = async (video: HTMLVideoElement) => {
@@ -513,7 +525,7 @@ const App = () => {
                 entryEl = document.createElement('div');
                 entryEl.className = 'transcript-entry';
                 entryEl.dataset.startTime = entry.start.toString();
-                entryEl.innerHTML = `<p><span class="speaker">${entry.speaker}:</span> ${entry.text}</p>`;
+                entryEl.innerHTML = `<p><span class="speaker">[${entry.speaker}]</span> ${entry.text}</p>`;
                 if (entry.note) {
                     const noteEl = document.createElement('div');
                     noteEl.className = 'transcript-note';
@@ -635,7 +647,6 @@ const App = () => {
             transcript: [], 
             recordingStartTime: 0, 
             lastFinalTranscriptTime: 0, 
-            speakerCounter: 1, 
             manualStop: false,
             screenshotCounter: 0,
             audioContext: null,
@@ -686,44 +697,45 @@ const App = () => {
             const action = target.getAttribute('data-action');
             const entryIndex = activeTranscriptIndex;
             const transcriptEntry = state.transcript[entryIndex] as TranscriptEntry | undefined;
+            const entryElement = DOM.liveTranscriptDisplay.querySelector(`[data-index="${entryIndex}"]`);
+            if (!entryElement) return;
 
             if (action === 'add-topic') {
                 state.isInlineEditing = true;
-                const entryElement = DOM.liveTranscriptDisplay.querySelector(`[data-index="${entryIndex}"]`);
                 const input = document.createElement('input');
                 input.type = 'text';
                 input.className = 'inline-topic-editor';
                 input.placeholder = 'Introduce el título del tema y pulsa Enter';
-                entryElement?.insertAdjacentElement('afterend', input);
+                entryElement.insertAdjacentElement('afterend', input);
                 input.focus();
 
                 const saveTopic = () => {
                     const topic = input.value.trim();
                     if (topic) {
-                        const newTopic: TopicMarkerEntry = { type: 'topic', text: topic, time: (Date.now() - state.recordingStartTime) / 1000 };
+                        const time = transcriptEntry ? transcriptEntry.start : (Date.now() - state.recordingStartTime) / 1000;
+                        const newTopic: TopicMarkerEntry = { type: 'topic', text: topic, time };
                         state.transcript.splice(entryIndex + 1, 0, newTopic);
                     }
                     state.isInlineEditing = false;
                     renderLiveTranscript('');
                 };
-                input.addEventListener('blur', saveTopic);
+                input.addEventListener('blur', saveTopic, { once: true });
                 input.addEventListener('keydown', (e) => { if (e.key === 'Enter') input.blur(); });
             } else if (action === 'add-note' && transcriptEntry?.type === 'transcript') {
                 state.isInlineEditing = true;
-                const entryElement = DOM.liveTranscriptDisplay.querySelector(`[data-index="${entryIndex}"]`);
-                const existingNote = entryElement?.querySelector('.transcript-note, .inline-note-editor');
+                const existingNote = entryElement.querySelector('.transcript-note, .inline-note-editor');
                 if(existingNote) existingNote.remove();
 
                 const textarea = document.createElement('textarea');
                 textarea.className = 'inline-note-editor';
                 textarea.value = transcriptEntry.note || '';
-                entryElement?.appendChild(textarea);
+                entryElement.appendChild(textarea);
                 textarea.focus();
                 textarea.addEventListener('blur', () => {
                     transcriptEntry.note = textarea.value.trim();
                     state.isInlineEditing = false;
                     renderLiveTranscript('');
-                });
+                }, { once: true });
             }
         });
         

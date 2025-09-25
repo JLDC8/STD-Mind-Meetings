@@ -140,6 +140,17 @@ header p {
 }
 .btn-primary { background-color: var(--santander-red); border-color: var(--santander-red); }
 .btn-primary:hover { background-color: var(--santander-red-dark); border-color: var(--santander-red-dark); transform: translateY(-2px); }
+.btn-primary[disabled] {
+    background-color: var(--medium-grey);
+    border-color: var(--medium-grey);
+    cursor: not-allowed;
+    transform: none;
+}
+.btn-primary[disabled]:hover {
+    background-color: var(--medium-grey);
+    border-color: var(--medium-grey);
+}
+
 
 .btn-secondary {
     background-color: var(--container-bg);
@@ -212,10 +223,41 @@ textarea:focus {
 }
 
 /* Tab Ver Reuniones */
-.upload-area.single-upload {
+.upload-area.multi-upload {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.upload-item {
     display: flex;
-    justify-content: center;
-    padding: 2rem 0;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    border: 2px dashed var(--border-color);
+    border-radius: var(--border-radius);
+    padding: 1.5rem;
+    transition: border-color 0.3s;
+}
+.upload-item:hover {
+    border-color: var(--medium-grey);
+}
+.upload-item .btn-secondary {
+    width: 100%;
+}
+.upload-item svg {
+    width: 20px;
+    height: 20px;
+    stroke: var(--dark-grey);
+    fill: none;
+}
+.file-name-display {
+    margin-top: 1rem;
+    font-size: 0.9rem;
+    color: var(--medium-grey);
+    word-break: break-all;
+    min-height: 30px;
 }
 
 
@@ -287,8 +329,8 @@ textarea:focus {
     flex-direction: column;
     overflow: hidden;
 }
-.sidebar-section:first-child { flex: 3; }
-.sidebar-section:last-child { flex: 2; }
+.sidebar-section:first-child { flex: 5; } /* Más espacio para la transcripción */
+.sidebar-section:last-child { flex: 1; } /* Menos espacio para las notas */
 
 .sidebar-section h2 {
     font-size: 1rem;
