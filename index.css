@@ -191,6 +191,26 @@ textarea:focus {
     box-shadow: 0 0 0 2px rgba(236, 0, 0, 0.2);
 }
 
+.format-selector-container {
+    margin-bottom: 1.5rem;
+    text-align: center;
+}
+
+.format-selector-container label {
+    display: block;
+    font-weight: 500;
+    margin-bottom: 0.5rem;
+}
+
+#video-format {
+    padding: 0.5rem;
+    border-radius: var(--border-radius);
+    border: 1px solid var(--border-color);
+    font-family: 'Roboto', sans-serif;
+    font-size: 0.95rem;
+    cursor: pointer;
+}
+
 /* Tab Ver Reuniones */
 .upload-area { display: flex; flex-wrap: wrap; gap: 1rem; margin-bottom: 2rem; }
 .file-input-wrapper { flex: 1; min-width: 200px; text-align: center; }

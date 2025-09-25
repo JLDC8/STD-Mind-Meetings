@@ -43,6 +43,8 @@ const App = () => {
         lastFinalTranscriptTime: 0,
         speakerCounter: 1,
         manualStop: false,
+        videoMimeType: 'video/webm' as string,
+        videoExtension: 'webm' as string,
     };
 
     // --- ELEMENTOS DEL DOM ---
@@ -53,6 +55,7 @@ const App = () => {
         micBtn: document.getElementById('mic-btn') as HTMLButtonElement,
         statusEl: document.getElementById('status') as HTMLParagraphElement,
         startRecordBtn: document.getElementById('start-record-btn') as HTMLButtonElement,
+        videoFormatSelect: document.getElementById('video-format') as HTMLSelectElement,
         stopRecordBtn: document.getElementById('stop-record-btn') as HTMLButtonElement,
         screenshotBtn: document.getElementById('screenshot-btn') as HTMLButtonElement,
         liveVideoPreview: document.getElementById('live-video-preview') as HTMLVideoElement,
@@ -174,6 +177,16 @@ const App = () => {
         state.reunionTitle = DOM.reunionTitleInput.value.trim() || "Reunión Sin Título";
         DOM.recordingTitle.textContent = `Grabando: ${state.reunionTitle}`;
 
+        const selectedMimeType = DOM.videoFormatSelect.value;
+        if (!MediaRecorder.isTypeSupported(selectedMimeType)) {
+            console.warn(`Formato ${selectedMimeType} no soportado. Usando video/webm como alternativa.`);
+            state.videoMimeType = 'video/webm';
+        } else {
+            state.videoMimeType = selectedMimeType;
+        }
+        state.videoExtension = state.videoMimeType.includes('mp4') ? 'mp4' : 'webm';
+
+
         try {
             const displayStream = await navigator.mediaDevices.getDisplayMedia({ video: { mediaSource: "screen" } as any, audio: true });
             const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -201,7 +214,7 @@ const App = () => {
             state.screenStream = displayStream;
             
             state.recordedScreenChunks = [];
-            state.screenMediaRecorder = new MediaRecorder(combinedStream, { mimeType: 'video/webm' });
+            state.screenMediaRecorder = new MediaRecorder(combinedStream, { mimeType: state.videoMimeType });
             state.screenMediaRecorder.ondataavailable = (event) => { if (event.data.size > 0) state.recordedScreenChunks.push(event.data); };
 
             state.screenMediaRecorder.onstop = () => {
@@ -555,7 +568,7 @@ const App = () => {
 
     const downloadAllFiles = () => {
         const baseFilename = generateFilename();
-        downloadFile(new Blob(state.recordedScreenChunks, { type: 'video/webm' }), `${baseFilename}.webm`);
+        downloadFile(new Blob(state.recordedScreenChunks, { type: state.videoMimeType }), `${baseFilename}.${state.videoExtension}`);
         
         const mergedPcm = new Float32Array(state.pcmData.reduce((acc, val) => acc + val.length, 0));
         let offset = 0;
@@ -591,6 +604,8 @@ const App = () => {
             pcmData: [],
             dictationAudioContext: null,
             dictationPcmData: [],
+            videoMimeType: 'video/webm',
+            videoExtension: 'webm',
         };
         DOM.liveTranscriptDisplay.innerHTML = '';
         DOM.liveNotes.value = '';
