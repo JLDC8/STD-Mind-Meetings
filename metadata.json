@@ -1,0 +1,8 @@
+{
+  "name": "Santander Mind Meetings",
+  "description": "A simple, local-first dictation app using the Web Speech API.",
+  "requestFramePermissions": [
+    "microphone",
+    "display-capture"
+  ]
+}
