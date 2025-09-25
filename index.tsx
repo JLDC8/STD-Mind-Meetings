@@ -30,15 +30,15 @@ const App = () => {
         screenStream: null as MediaStream | null,
         screenMediaRecorder: null as MediaRecorder | null,
         recordedScreenChunks: [] as Blob[],
-        screenAudioRecorder: null as MediaRecorder | null,
-        recordedScreenAudioChunks: [] as Blob[],
-        audioFileExtension: 'webm', // default
+        audioContext: null as AudioContext | null,
+        pcmData: [] as Float32Array[],
+        sampleRate: 44100,
         dictationAudioStream: null as MediaStream | null,
-        dictationAudioRecorder: null as MediaRecorder | null,
-        recordedDictationAudioChunks: [] as Blob[],
+        dictationAudioContext: null as AudioContext | null,
+        dictationPcmData: [] as Float32Array[],
         markers: [] as { time: number; text: string; note: string }[],
         transcript: [] as TranscriptItem[],
-        screenshots: [] as { blob: Blob, filename: string }[],
+        screenshotCounter: 0,
         recordingStartTime: 0,
         lastFinalTranscriptTime: 0,
         speakerCounter: 1,
@@ -66,6 +66,7 @@ const App = () => {
         jsonUpload: document.getElementById('json-upload') as HTMLInputElement,
         reviewPlayer: document.getElementById('review-player')!,
         reviewVideo: document.getElementById('review-video') as HTMLVideoElement,
+        playButtonOverlay: document.getElementById('play-button-overlay')!,
         reviewVideoContainer: document.getElementById('review-video-container')!,
         reviewTranscriptContainer: document.getElementById('review-transcript-container')!,
         thumbnailContainer: document.getElementById('thumbnail-container')!,
@@ -121,8 +122,6 @@ const App = () => {
                     const speakerTag = `Hablante ${String.fromCharCode(64 + state.speakerCounter)}`;
                     finalTranscript += `${speakerTag}: ${transcriptText}\n`;
 
-                    // FIX: The last item in transcript could be a topic marker, which doesn't have an 'end' property.
-                    // Find the last actual transcript entry to get its end time.
                     let lastTranscriptEndTime = 0;
                     for (let j = state.transcript.length - 1; j >= 0; j--) {
                         const item = state.transcript[j];
@@ -180,10 +179,22 @@ const App = () => {
             const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
             const audioContext = new AudioContext();
+            state.audioContext = audioContext;
+            state.sampleRate = audioContext.sampleRate;
+            state.pcmData = [];
             const destination = audioContext.createMediaStreamDestination();
             if (displayStream.getAudioTracks().length > 0) audioContext.createMediaStreamSource(displayStream).connect(destination);
             if (micStream.getAudioTracks().length > 0) audioContext.createMediaStreamSource(micStream).connect(destination);
             const mixedAudioStream = destination.stream;
+
+            const source = audioContext.createMediaStreamSource(mixedAudioStream);
+            const processor = audioContext.createScriptProcessor(4096, 1, 1);
+            processor.onaudioprocess = (e: AudioProcessingEvent) => {
+                if (!state.isRecording) return;
+                state.pcmData.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+            };
+            source.connect(processor);
+            processor.connect(audioContext.destination);
             
             const combinedStream = new MediaStream([displayStream.getVideoTracks()[0], ...mixedAudioStream.getAudioTracks()]);
             DOM.liveVideoPreview.srcObject = combinedStream;
@@ -192,12 +203,6 @@ const App = () => {
             state.recordedScreenChunks = [];
             state.screenMediaRecorder = new MediaRecorder(combinedStream, { mimeType: 'video/webm' });
             state.screenMediaRecorder.ondataavailable = (event) => { if (event.data.size > 0) state.recordedScreenChunks.push(event.data); };
-
-            const audioMimeType = MediaRecorder.isTypeSupported('audio/wav') ? 'audio/wav' : 'audio/webm';
-            state.audioFileExtension = audioMimeType === 'audio/wav' ? 'wav' : 'webm';
-            state.recordedScreenAudioChunks = [];
-            state.screenAudioRecorder = new MediaRecorder(mixedAudioStream, { mimeType: audioMimeType });
-            state.screenAudioRecorder.ondataavailable = (event) => { if (event.data.size > 0) state.recordedScreenAudioChunks.push(event.data); };
 
             state.screenMediaRecorder.onstop = () => {
                 downloadAllFiles();
@@ -209,7 +214,6 @@ const App = () => {
             DOM.mainUI.style.display = 'none';
             DOM.recordingUI.style.display = 'flex';
             state.screenMediaRecorder.start();
-            state.screenAudioRecorder.start();
             state.isRecording = true;
             state.recordingStartTime = Date.now();
             state.lastFinalTranscriptTime = state.recordingStartTime;
@@ -225,9 +229,9 @@ const App = () => {
     const stopScreenRecording = () => {
         state.manualStop = true;
         if (state.screenMediaRecorder?.state === 'recording') state.screenMediaRecorder.stop();
-        if (state.screenAudioRecorder?.state === 'recording') state.screenAudioRecorder.stop();
         if (recognition && state.isListening) recognition.stop();
         state.screenStream?.getTracks().forEach(track => track.stop());
+        state.audioContext?.close().catch(e => console.error("Error closing AudioContext:", e));
     };
 
     const renderLiveTranscript = (interimTranscript: string) => {
@@ -266,25 +270,44 @@ const App = () => {
         try {
             state.manualStop = false;
             state.dictationAudioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            state.recordedDictationAudioChunks = [];
-            const audioMimeType = MediaRecorder.isTypeSupported('audio/wav') ? 'audio/wav' : 'audio/webm';
-            const extension = audioMimeType === 'audio/wav' ? 'wav' : 'webm';
-            state.dictationAudioRecorder = new MediaRecorder(state.dictationAudioStream, { mimeType: audioMimeType });
-            state.dictationAudioRecorder.ondataavailable = (e) => { if (e.data.size > 0) state.recordedDictationAudioChunks.push(e.data); };
-            state.dictationAudioRecorder.onstop = () => {
-                const blob = new Blob(state.recordedDictationAudioChunks, { type: audioMimeType });
-                downloadFile(blob, `${generateFilename()}.${extension}`);
-                state.recordedDictationAudioChunks = [];
+            
+            const audioContext = new AudioContext();
+            state.dictationAudioContext = audioContext;
+            state.dictationPcmData = [];
+            state.sampleRate = audioContext.sampleRate;
+
+            const source = audioContext.createMediaStreamSource(state.dictationAudioStream);
+            const processor = audioContext.createScriptProcessor(4096, 1, 1);
+            processor.onaudioprocess = (e: AudioProcessingEvent) => {
+                if (!state.isListening) return;
+                state.dictationPcmData.push(new Float32Array(e.inputBuffer.getChannelData(0)));
             };
-            state.dictationAudioRecorder.start();
+            source.connect(processor);
+            processor.connect(audioContext.destination);
+
             recognition.start();
         } catch (err) { console.error('Error al iniciar grabación de audio:', err); }
     };
+
     const stopAudioOnlyRecording = () => {
         state.manualStop = true;
-        if (state.dictationAudioRecorder?.state === 'recording') state.dictationAudioRecorder.stop();
-        if (state.dictationAudioStream) state.dictationAudioStream.getTracks().forEach(track => track.stop());
         if (recognition && state.isListening) recognition.stop();
+        if (state.dictationAudioStream) state.dictationAudioStream.getTracks().forEach(track => track.stop());
+        state.dictationAudioContext?.close().catch(e => console.error("Error closing dictation AudioContext:", e));
+
+        if (state.dictationPcmData.length > 0) {
+            const mergedPcm = new Float32Array(state.dictationPcmData.reduce((acc, val) => acc + val.length, 0));
+            let offset = 0;
+            for (const pcm of state.dictationPcmData) {
+                mergedPcm.set(pcm, offset);
+                offset += pcm.length;
+            }
+            const wavBlob = encodeWAV(mergedPcm, state.sampleRate);
+            downloadFile(wavBlob, `${generateFilename()}_audio.wav`);
+        }
+        
+        state.dictationPcmData = [];
+        state.dictationAudioContext = null;
     };
 
     // --- FUNCIONALIDADES EN GRABACIÓN ---
@@ -301,18 +324,19 @@ const App = () => {
         const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/png'));
         if (!blob) return;
 
-        const screenshotCount = state.screenshots.length + 1;
-        const filename = `captura-${screenshotCount}.png`;
-        state.screenshots.push({ blob, filename });
+        state.screenshotCounter++;
+        const baseFilename = generateFilename();
+        const filename = `${baseFilename}_captura_${state.screenshotCounter}.png`;
+        
+        downloadFile(blob, filename);
 
         const timestamp = new Date().toLocaleTimeString('es-ES');
-        DOM.liveNotes.value += `\n[Captura de pantalla-${screenshotCount} tomada a las ${timestamp}]`;
+        DOM.liveNotes.value += `\n[Captura de pantalla-${state.screenshotCounter} tomada a las ${timestamp}]`;
         DOM.liveNotes.scrollTop = DOM.liveNotes.scrollHeight;
     };
 
     // --- PESTAÑA DE REVISIÓN DE REUNIONES ---
     const setupReviewTab = () => {
-        // ... (resto de la función igual que la versión anterior)
         let videoFile: File | null = null;
         let audioFile: File | null = null;
         let jsonFile: File | null = null;
@@ -320,6 +344,11 @@ const App = () => {
 
         const loadAndPlay = () => {
             if (videoFile && audioFile && jsonFile) {
+                DOM.playButtonOverlay.classList.remove('hidden');
+                DOM.reviewVideo.onplay = () => DOM.playButtonOverlay.classList.add('hidden');
+                DOM.reviewVideo.onpause = () => DOM.playButtonOverlay.classList.remove('hidden');
+                DOM.playButtonOverlay.onclick = () => DOM.reviewVideo.play();
+                
                 reviewAudio = new Audio(URL.createObjectURL(audioFile));
                 DOM.reviewVideo.src = URL.createObjectURL(videoFile);
                 DOM.reviewVideo.muted = true;
@@ -365,7 +394,6 @@ const App = () => {
     };
 
     const generateThumbnails = async (video: HTMLVideoElement) => {
-        // ... (igual que la versión anterior)
         DOM.thumbnailContainer.innerHTML = '<p style="color:white; font-size:12px; padding: 5px; width: 100%; text-align: center;">Generando previsualizaciones...</p>';
         const canvas = document.createElement('canvas');
         const context = canvas.getContext('2d');
@@ -404,7 +432,6 @@ const App = () => {
     };
     
     const setupThumbnailHover = () => {
-        // ... (igual que la versión anterior)
         DOM.reviewVideoContainer.addEventListener('mousemove', (e) => {
             const rect = DOM.reviewVideoContainer.getBoundingClientRect();
             const x = e.clientX - rect.left;
@@ -456,7 +483,6 @@ const App = () => {
     };
 
     const setupReviewVideoSync = (transcript: TranscriptItem[]) => {
-        // ... (igual que la versión anterior)
         DOM.reviewVideo.addEventListener('timeupdate', () => {
             const currentTime = DOM.reviewVideo.currentTime;
             const phrases = DOM.reviewTranscriptContainer.querySelectorAll('.transcript-entry[data-start-time]');
@@ -479,7 +505,7 @@ const App = () => {
 
     // --- UTILIDADES Y EVENTOS ---
     const generateFilename = () => {
-        const title = (state.reunionTitle || "grabacion").replace(/\s+/g, '_');
+        const title = (state.reunionTitle || DOM.reunionTitleInput.value.trim() || "grabacion").replace(/\s+/g, '_');
         const date = new Date();
         const timestamp = `${date.getFullYear()}${(date.getMonth()+1).toString().padStart(2, '0')}${date.getDate().toString().padStart(2, '0')}_${date.getHours().toString().padStart(2, '0')}${date.getMinutes().toString().padStart(2, '0')}`;
         return `${title}_${timestamp}`;
@@ -496,22 +522,76 @@ const App = () => {
         document.body.removeChild(a);
     };
 
+    const encodeWAV = (samples: Float32Array, sampleRate: number): Blob => {
+        const buffer = new ArrayBuffer(44 + samples.length * 2);
+        const view = new DataView(buffer);
+        const writeString = (view: DataView, offset: number, str: string) => {
+            for (let i = 0; i < str.length; i++) {
+                view.setUint8(offset + i, str.charCodeAt(i));
+            }
+        };
+
+        writeString(view, 0, 'RIFF');
+        view.setUint32(4, 36 + samples.length * 2, true);
+        writeString(view, 8, 'WAVE');
+        writeString(view, 12, 'fmt ');
+        view.setUint32(16, 16, true);
+        view.setUint16(20, 1, true); // PCM
+        view.setUint16(22, 1, true); // Mono
+        view.setUint32(24, sampleRate, true);
+        view.setUint32(28, sampleRate * 2, true); // byte rate
+        view.setUint16(32, 2, true); // block align
+        view.setUint16(34, 16, true); // bits per sample
+        writeString(view, 36, 'data');
+        view.setUint32(40, samples.length * 2, true);
+
+        let offset = 44;
+        for (let i = 0; i < samples.length; i++, offset += 2) {
+            const s = Math.max(-1, Math.min(1, samples[i]));
+            view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+        }
+        return new Blob([view], { type: 'audio/wav' });
+    };
+
     const downloadAllFiles = () => {
         const baseFilename = generateFilename();
         downloadFile(new Blob(state.recordedScreenChunks, { type: 'video/webm' }), `${baseFilename}.webm`);
-        downloadFile(new Blob(state.recordedScreenAudioChunks), `${baseFilename}_audio.${state.audioFileExtension}`);
+        
+        const mergedPcm = new Float32Array(state.pcmData.reduce((acc, val) => acc + val.length, 0));
+        let offset = 0;
+        for (const pcm of state.pcmData) {
+            mergedPcm.set(pcm, offset);
+            offset += pcm.length;
+        }
+        const wavBlob = encodeWAV(mergedPcm, state.sampleRate);
+        downloadFile(wavBlob, `${baseFilename}_audio.wav`);
         
         const jsonData = { title: state.reunionTitle, date: new Date().toISOString(), transcript: state.transcript };
         downloadFile(new Blob([JSON.stringify(jsonData, null, 2)], { type: 'application/json' }), `${baseFilename}.json`);
 
         const notes = DOM.liveNotes.value;
         if (notes.trim()) downloadFile(new Blob([notes], { type: 'text/plain;charset=utf-8' }), `${baseFilename}_notas.txt`);
-        
-        state.screenshots.forEach(ss => downloadFile(ss.blob, `${baseFilename}_${ss.filename}`));
     };
     
     const resetState = () => {
-        state = { ...state, isRecording: false, isListening: false, screenStream: null, screenMediaRecorder: null, screenAudioRecorder: null, recordedScreenChunks: [], recordedScreenAudioChunks: [], screenshots: [], transcript: [], recordingStartTime: 0, lastFinalTranscriptTime: 0, speakerCounter: 1, manualStop: false };
+        state = { 
+            ...state, 
+            isRecording: false, 
+            isListening: false, 
+            screenStream: null, 
+            screenMediaRecorder: null, 
+            recordedScreenChunks: [], 
+            transcript: [], 
+            recordingStartTime: 0, 
+            lastFinalTranscriptTime: 0, 
+            speakerCounter: 1, 
+            manualStop: false,
+            screenshotCounter: 0,
+            audioContext: null,
+            pcmData: [],
+            dictationAudioContext: null,
+            dictationPcmData: [],
+        };
         DOM.liveTranscriptDisplay.innerHTML = '';
         DOM.liveNotes.value = '';
     };
@@ -559,9 +639,9 @@ const App = () => {
                     renderLiveTranscript('');
                 }
             } else if (action === 'add-note' && transcriptEntry?.type === 'transcript') {
-                const note = prompt('Añade tu nota:', transcriptEntry.note || '');
+                const note = prompt('Añade tu nota:', (transcriptEntry as TranscriptEntry).note || '');
                 if (note !== null) {
-                    transcriptEntry.note = note;
+                    (transcriptEntry as TranscriptEntry).note = note;
                     renderLiveTranscript('');
                 }
             }

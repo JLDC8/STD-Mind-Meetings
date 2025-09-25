@@ -52,15 +52,15 @@
                 </div>
                 
                 <div id="reuniones-tab" class="tab-content">
-                    <p class="tab-description">Carga el vídeo, el audio (.wav/.webm) y el archivo de transcripción (.json) para revisar una reunión grabada.</p>
+                    <p class="tab-description">Carga el vídeo (.webm), el audio (.wav) y el archivo de transcripción (.json) para revisar una reunión grabada.</p>
                     <div class="upload-area">
                         <div class="file-input-wrapper">
                              <label for="video-upload">1. Cargar Vídeo (.webm)</label>
                              <input type="file" id="video-upload" accept=".webm">
                         </div>
                          <div class="file-input-wrapper">
-                             <label for="audio-upload">2. Cargar Audio</label>
-                             <input type="file" id="audio-upload" accept=".webm,.wav,audio/*">
+                             <label for="audio-upload">2. Cargar Audio (.wav)</label>
+                             <input type="file" id="audio-upload" accept=".wav,audio/wav">
                         </div>
                         <div class="file-input-wrapper">
                             <label for="json-upload">3. Cargar Transcripción (.json)</label>
@@ -70,6 +70,9 @@
                     <div id="review-player" style="display: none;">
                         <div id="review-video-container" class="review-video-container">
                              <video id="review-video" controls muted></video>
+                             <div id="play-button-overlay">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                             </div>
                              <div id="thumbnail-container"></div>
                              <div id="thumbnail-preview" style="display: none;">
                                 <img id="thumbnail-preview-img" src="" alt="Video thumbnail preview">

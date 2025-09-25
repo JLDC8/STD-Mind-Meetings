@@ -202,6 +202,31 @@ input[type="file"] { width: 100%; }
 #review-video { width: 100%; border-radius: var(--border-radius); background-color: #000; }
 #review-transcript-container { max-height: 400px; }
 
+#play-button-overlay {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-color: rgba(0,0,0,0.4);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+    z-index: 5;
+    opacity: 1;
+    transition: opacity 0.3s ease;
+}
+#play-button-overlay.hidden {
+    opacity: 0;
+    pointer-events: none;
+}
+#play-button-overlay svg {
+    fill: rgba(255, 255, 255, 0.9);
+    filter: drop-shadow(0 2px 5px rgba(0,0,0,0.5));
+    transition: transform 0.2s ease;
+}
+#play-button-overlay:hover svg {
+    transform: scale(1.1);
+}
+
 #thumbnail-container {
     position: absolute;
     bottom: 45px; /* Ajustar para estar sobre los controles del video */
@@ -213,6 +238,11 @@ input[type="file"] { width: 100%; }
     align-items: center;
     pointer-events: none;
     gap: 4px; /* Espacio entre miniaturas */
+    opacity: 0; /* Oculto por defecto */
+    transition: opacity 0.3s ease-in-out;
+}
+.review-video-container:hover #thumbnail-container {
+    opacity: 1; /* Visible en hover */
 }
 
 .progress-thumbnail {
