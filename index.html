@@ -59,36 +59,13 @@
                 </div>
                 
                 <div id="reuniones-tab" class="tab-content">
-                    <p class="tab-description">Carga el vídeo (.webm, .mp4), el audio (.wav) y el archivo de transcripción (.json) para revisar una reunión grabada.</p>
-                    <div class="upload-area">
-                        <div class="file-input-wrapper">
-                             <label for="video-upload">1. Cargar Vídeo (.webm, .mp4)</label>
-                             <input type="file" id="video-upload" accept=".webm,.mp4">
-                        </div>
-                         <div class="file-input-wrapper">
-                             <label for="audio-upload">2. Cargar Audio (.wav)</label>
-                             <input type="file" id="audio-upload" accept=".wav,audio/wav">
-                        </div>
-                        <div class="file-input-wrapper">
-                            <label for="json-upload">3. Cargar Transcripción (.json)</label>
-                            <input type="file" id="json-upload" accept=".json">
-                        </div>
-                    </div>
-                    <div id="review-player" style="display: none;">
-                        <div id="review-video-container" class="review-video-container">
-                             <video id="review-video" controls muted></video>
-                             <div id="play-button-overlay">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-                             </div>
-                             <div id="thumbnail-container"></div>
-                             <div id="thumbnail-preview" style="display: none;">
-                                <img id="thumbnail-preview-img" src="" alt="Video thumbnail preview">
-                                <span id="thumbnail-preview-time">00:00</span>
-                             </div>
-                        </div>
-                        <div id="review-transcript-container" class="transcript-display">
-                            <p class="placeholder">La transcripción aparecerá aquí.</p>
-                        </div>
+                    <p class="tab-description">Selecciona el archivo de vídeo (.mp4 o .webm) de tu reunión. La aplicación cargará automáticamente los archivos .wav y .json asociados que encuentre en la misma carpeta.</p>
+                    <div class="upload-area single-upload">
+                         <label for="reunion-upload-input" class="btn btn-primary">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                            <span>Cargar Archivos de Reunión</span>
+                         </label>
+                         <input type="file" id="reunion-upload-input" multiple accept=".webm,.mp4,.wav,.json" style="display: none;">
                     </div>
                 </div>
             </main>
@@ -101,7 +78,7 @@
             <h1 id="recording-title">Grabando: Revisión Trimestral</h1>
             <div class="recording-controls">
                  <button id="screenshot-btn" class="btn btn-secondary">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path><rect x="2" y="2" width="20" height="20" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
                     <span>Capturar</span>
                 </button>
                 <button id="stop-record-btn" class="btn btn-primary stop-btn">
@@ -127,9 +104,31 @@
         </div>
     </div>
 
-    <!-- Tooltip para marcadores (obsoleto, se gestiona dinámicamente) -->
-    <div id="marker-tooltip" style="display: none;">
-        <button id="add-marker-btn">Añadir Marcador</button>
+    <!-- Vista de Revisión de Reunión a Pantalla Completa -->
+    <div id="review-ui" style="display: none;">
+        <header id="review-header">
+            <h1 id="review-title">Revisando: Reunión</h1>
+             <button id="close-review-btn" class="btn btn-secondary">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                <span>Cerrar</span>
+            </button>
+        </header>
+        <div id="review-workspace">
+            <div id="review-video-container" class="review-video-container">
+                 <video id="review-video" controls muted></video>
+                 <div id="play-button-overlay">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                 </div>
+                 <div id="thumbnail-container"></div>
+                 <div id="thumbnail-preview" style="display: none;">
+                    <img id="thumbnail-preview-img" src="" alt="Video thumbnail preview">
+                    <span id="thumbnail-preview-time">00:00</span>
+                 </div>
+            </div>
+            <div id="review-transcript-container" class="transcript-display">
+                <p class="placeholder">La transcripción aparecerá aquí.</p>
+            </div>
+        </div>
     </div>
 
     <script type="module" src="index.tsx"></script>

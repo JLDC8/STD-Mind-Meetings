@@ -25,6 +25,7 @@ const App = () => {
     let state = {
         isRecording: false,
         isListening: false,
+        isInlineEditing: false,
         activeTab: 'dictation-tab',
         reunionTitle: '',
         screenStream: null as MediaStream | null,
@@ -51,6 +52,7 @@ const App = () => {
     const DOM = {
         mainUI: document.getElementById('main-ui')!,
         recordingUI: document.getElementById('recording-ui')!,
+        reviewUI: document.getElementById('review-ui')!,
         reunionTitleInput: document.getElementById('reunion-title') as HTMLInputElement,
         micBtn: document.getElementById('mic-btn') as HTMLButtonElement,
         statusEl: document.getElementById('status') as HTMLParagraphElement,
@@ -64,10 +66,9 @@ const App = () => {
         liveNotes: document.getElementById('live-notes') as HTMLTextAreaElement,
         transcriptTextarea: document.getElementById('transcript-textarea') as HTMLTextAreaElement,
         // Pestaña de revisión
-        videoUpload: document.getElementById('video-upload') as HTMLInputElement,
-        audioUpload: document.getElementById('audio-upload') as HTMLInputElement,
-        jsonUpload: document.getElementById('json-upload') as HTMLInputElement,
-        reviewPlayer: document.getElementById('review-player')!,
+        reunionUploadInput: document.getElementById('reunion-upload-input') as HTMLInputElement,
+        reviewTitle: document.getElementById('review-title')!,
+        closeReviewBtn: document.getElementById('close-review-btn')!,
         reviewVideo: document.getElementById('review-video') as HTMLVideoElement,
         playButtonOverlay: document.getElementById('play-button-overlay')!,
         reviewVideoContainer: document.getElementById('review-video-container')!,
@@ -334,12 +335,12 @@ const App = () => {
         if (!ctx) return;
 
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/png'));
+        const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.9));
         if (!blob) return;
 
         state.screenshotCounter++;
         const baseFilename = generateFilename();
-        const filename = `${baseFilename}_captura_${state.screenshotCounter}.png`;
+        const filename = `${baseFilename}_captura_${state.screenshotCounter}.jpg`;
         
         downloadFile(blob, filename);
 
@@ -350,55 +351,91 @@ const App = () => {
 
     // --- PESTAÑA DE REVISIÓN DE REUNIONES ---
     const setupReviewTab = () => {
-        let videoFile: File | null = null;
-        let audioFile: File | null = null;
-        let jsonFile: File | null = null;
-        let reviewAudio: HTMLAudioElement | null = null;
+        DOM.reunionUploadInput.addEventListener('change', (e) => {
+            const files = (e.target as HTMLInputElement).files;
+            if (!files || files.length === 0) return;
 
-        const loadAndPlay = () => {
-            if (videoFile && audioFile && jsonFile) {
-                DOM.playButtonOverlay.classList.remove('hidden');
-                DOM.reviewVideo.onplay = () => DOM.playButtonOverlay.classList.add('hidden');
-                DOM.reviewVideo.onpause = () => DOM.playButtonOverlay.classList.remove('hidden');
-                DOM.playButtonOverlay.onclick = () => DOM.reviewVideo.play();
-                
-                reviewAudio = new Audio(URL.createObjectURL(audioFile));
-                DOM.reviewVideo.src = URL.createObjectURL(videoFile);
-                DOM.reviewVideo.muted = true;
+            let videoFile: File | null = null;
+            let audioFile: File | null = null;
+            let jsonFile: File | null = null;
 
-                const syncPlay = () => reviewAudio?.play();
-                const syncPause = () => reviewAudio?.pause();
-                const syncSeek = () => {
-                    if (reviewAudio) reviewAudio.currentTime = DOM.reviewVideo.currentTime;
-                };
+            Array.from(files).forEach(file => {
+                if (file.type.startsWith('video/')) videoFile = file;
+                else if (file.type.startsWith('audio/')) audioFile = file;
+                else if (file.name.endsWith('.json')) jsonFile = file;
+            });
 
-                DOM.reviewVideo.removeEventListener('play', syncPlay);
-                DOM.reviewVideo.removeEventListener('pause', syncPause);
-                DOM.reviewVideo.removeEventListener('seeked', syncSeek);
-                DOM.reviewVideo.addEventListener('play', syncPlay);
-                DOM.reviewVideo.addEventListener('pause', syncPause);
-                DOM.reviewVideo.addEventListener('seeked', syncSeek);
-
-                DOM.reviewVideo.onloadedmetadata = () => generateThumbnails(DOM.reviewVideo);
-
-                const reader = new FileReader();
-                reader.onload = (e) => {
-                    try {
-                        const data = JSON.parse(e.target!.result as string);
-                        renderReviewTranscript(data.transcript);
-                        setupReviewVideoSync(data.transcript);
-                        DOM.reviewPlayer.style.display = 'grid';
-                    } catch (err) { alert("Error al leer el archivo JSON."); }
-                };
-                reader.readAsText(jsonFile);
+            if (!videoFile) {
+                alert("No se ha seleccionado un archivo de vídeo (.mp4 o .webm).");
+                return;
             }
+
+            // Si faltan audio o json, intentamos encontrarlos por el nombre
+            const baseName = videoFile.name.substring(0, videoFile.name.lastIndexOf('.'));
+            if (!audioFile) {
+                audioFile = Array.from(files).find(f => f.name.startsWith(baseName) && f.name.endsWith('.wav')) || null;
+            }
+            if (!jsonFile) {
+                jsonFile = Array.from(files).find(f => f.name.startsWith(baseName) && f.name.endsWith('.json')) || null;
+            }
+            
+            if (videoFile && audioFile && jsonFile) {
+                processAndPlayReviewFiles(videoFile, audioFile, jsonFile);
+            } else {
+                alert(`No se pudieron encontrar todos los archivos necesarios. Asegúrate de que los archivos de vídeo, audio (.wav) y JSON (.json) comparten el mismo nombre base (Ej: 'MiReunion.mp4', 'MiReunion_audio.wav', 'MiReunion.json') y selecciónalos juntos.`);
+            }
+        });
+    };
+
+    const processAndPlayReviewFiles = (videoFile: File, audioFile: File, jsonFile: File) => {
+        let reviewAudio: HTMLAudioElement | null = new Audio(URL.createObjectURL(audioFile));
+        DOM.reviewVideo.src = URL.createObjectURL(videoFile);
+        DOM.reviewVideo.muted = true;
+
+        DOM.mainUI.style.display = 'none';
+        DOM.reviewUI.style.display = 'flex';
+
+        DOM.playButtonOverlay.classList.remove('hidden');
+        DOM.reviewVideo.onplay = () => DOM.playButtonOverlay.classList.add('hidden');
+        DOM.reviewVideo.onpause = () => DOM.playButtonOverlay.classList.remove('hidden');
+        DOM.playButtonOverlay.onclick = () => DOM.reviewVideo.play();
+        
+        const syncPlay = () => reviewAudio?.play();
+        const syncPause = () => reviewAudio?.pause();
+        const syncSeek = () => {
+            if (reviewAudio) reviewAudio.currentTime = DOM.reviewVideo.currentTime;
         };
 
-        DOM.videoUpload.addEventListener('change', (e) => { videoFile = (e.target as HTMLInputElement).files?.[0] || null; loadAndPlay(); });
-        DOM.audioUpload.addEventListener('change', (e) => { audioFile = (e.target as HTMLInputElement).files?.[0] || null; loadAndPlay(); });
-        DOM.jsonUpload.addEventListener('change', (e) => { jsonFile = (e.target as HTMLInputElement).files?.[0] || null; loadAndPlay(); });
+        DOM.reviewVideo.removeEventListener('play', syncPlay);
+        DOM.reviewVideo.removeEventListener('pause', syncPause);
+        DOM.reviewVideo.removeEventListener('seeked', syncSeek);
+        DOM.reviewVideo.addEventListener('play', syncPlay);
+        DOM.reviewVideo.addEventListener('pause', syncPause);
+        DOM.reviewVideo.addEventListener('seeked', syncSeek);
+
+        DOM.reviewVideo.onloadedmetadata = () => generateThumbnails(DOM.reviewVideo);
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const data = JSON.parse(e.target!.result as string);
+                DOM.reviewTitle.textContent = `Revisando: ${data.title || 'Reunión'}`;
+                renderReviewTranscript(data.transcript);
+                setupReviewVideoSync(data.transcript);
+            } catch (err) { alert("Error al leer el archivo JSON."); }
+        };
+        reader.readAsText(jsonFile);
+        
+        DOM.closeReviewBtn.onclick = () => {
+            reviewAudio?.pause();
+            DOM.reviewVideo.pause();
+            reviewAudio = null;
+            DOM.reviewVideo.src = '';
+            DOM.reviewUI.style.display = 'none';
+            DOM.mainUI.style.display = 'flex';
+        };
     };
-    
+
     const formatTime = (seconds: number) => {
         const h = Math.floor(seconds / 3600).toString().padStart(2, '0');
         const m = Math.floor((seconds % 3600) / 60).toString().padStart(2, '0');
@@ -591,6 +628,7 @@ const App = () => {
             ...state, 
             isRecording: false, 
             isListening: false, 
+            isInlineEditing: false,
             screenStream: null, 
             screenMediaRecorder: null, 
             recordedScreenChunks: [], 
@@ -633,6 +671,7 @@ const App = () => {
         let activeTranscriptIndex: number | null = null;
         
         DOM.liveTranscriptDisplay.addEventListener('mouseover', e => {
+            if (state.isInlineEditing) return;
             const target = (e.target as HTMLElement).closest('.transcript-entry');
             if (target) {
                 target.appendChild(actionsEl);
@@ -641,24 +680,50 @@ const App = () => {
         });
 
         actionsEl.addEventListener('click', e => {
+            if (state.isInlineEditing) return;
             const target = (e.target as HTMLElement).closest('[data-action]');
             if (!target || activeTranscriptIndex === null) return;
             const action = target.getAttribute('data-action');
-            const transcriptEntry = state.transcript[activeTranscriptIndex];
+            const entryIndex = activeTranscriptIndex;
+            const transcriptEntry = state.transcript[entryIndex] as TranscriptEntry | undefined;
 
             if (action === 'add-topic') {
-                const topic = prompt('Introduce el título del tema:');
-                if (topic) {
-                    const newTopic: TopicMarkerEntry = { type: 'topic', text: topic, time: (Date.now() - state.recordingStartTime) / 1000 };
-                    state.transcript.splice(activeTranscriptIndex + 1, 0, newTopic);
+                state.isInlineEditing = true;
+                const entryElement = DOM.liveTranscriptDisplay.querySelector(`[data-index="${entryIndex}"]`);
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.className = 'inline-topic-editor';
+                input.placeholder = 'Introduce el título del tema y pulsa Enter';
+                entryElement?.insertAdjacentElement('afterend', input);
+                input.focus();
+
+                const saveTopic = () => {
+                    const topic = input.value.trim();
+                    if (topic) {
+                        const newTopic: TopicMarkerEntry = { type: 'topic', text: topic, time: (Date.now() - state.recordingStartTime) / 1000 };
+                        state.transcript.splice(entryIndex + 1, 0, newTopic);
+                    }
+                    state.isInlineEditing = false;
                     renderLiveTranscript('');
-                }
+                };
+                input.addEventListener('blur', saveTopic);
+                input.addEventListener('keydown', (e) => { if (e.key === 'Enter') input.blur(); });
             } else if (action === 'add-note' && transcriptEntry?.type === 'transcript') {
-                const note = prompt('Añade tu nota:', (transcriptEntry as TranscriptEntry).note || '');
-                if (note !== null) {
-                    (transcriptEntry as TranscriptEntry).note = note;
+                state.isInlineEditing = true;
+                const entryElement = DOM.liveTranscriptDisplay.querySelector(`[data-index="${entryIndex}"]`);
+                const existingNote = entryElement?.querySelector('.transcript-note, .inline-note-editor');
+                if(existingNote) existingNote.remove();
+
+                const textarea = document.createElement('textarea');
+                textarea.className = 'inline-note-editor';
+                textarea.value = transcriptEntry.note || '';
+                entryElement?.appendChild(textarea);
+                textarea.focus();
+                textarea.addEventListener('blur', () => {
+                    transcriptEntry.note = textarea.value.trim();
+                    state.isInlineEditing = false;
                     renderLiveTranscript('');
-                }
+                });
             }
         });
         
