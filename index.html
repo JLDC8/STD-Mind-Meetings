@@ -52,11 +52,28 @@
                             </select>
                         </div>
                         <div>
-                            <label for="audio-source">Fuente de Audio</label>
-                            <select id="audio-source">
-                                <option value="both">Micrófono y Audio del Sistema</option>
-                                <option value="system">Solo Audio del Sistema</option>
+                            <label for="video-audio-source">Audio para Vídeo</label>
+                            <select id="video-audio-source">
+                                <option value="both">Micrófono y Sistema</option>
+                                <option value="system">Solo Sistema</option>
                                 <option value="mic">Solo Micrófono</option>
+                                <option value="none">Sin Audio</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="wav-audio-source">Audio para WAV</label>
+                            <select id="wav-audio-source">
+                                <option value="both">Micrófono y Sistema</option>
+                                <option value="system">Solo Sistema</option>
+                                <option value="mic">Solo Micrófono</option>
+                            </select>
+                        </div>
+                        <div>
+                             <label for="transcript-audio-source">Audio para Transcripción</label>
+                            <select id="transcript-audio-source">
+                                <option value="mic">Solo Micrófono (Recomendado)</option>
+                                <option value="both">Micrófono y Sistema</option>
+                                <option value="system">Solo Sistema</option>
                             </select>
                         </div>
                     </div>
